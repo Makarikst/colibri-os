@@ -1,7 +1,7 @@
 /* ============================================
-   Colibri OS — Ядро v0.4
+   Colibri OS — Ядро v0.5
    VGA + клавиатура + Shell + ФС + куча
-   + nano + .cpe (заготовки)
+   + nano + .cpe (интерпретатор) + .cai (заглушка)
    ============================================ */
 
 #include "kmalloc.h"
@@ -15,6 +15,7 @@
 #define LIGHT_GREEN  10
 #define LIGHT_CYAN   11
 #define LIGHT_YELLOW 14
+#define LIGHT_RED    12
 
 static int cursor_x = 0;
 static int cursor_y = 0;
@@ -98,8 +99,18 @@ void print_color(const char* str, unsigned char col) {
     color = old;
 }
 
+static void print_dec(unsigned int n) {
+    if (n == 0) { putchar('0'); return; }
+    char buf[12];
+    int i = 0;
+    while (n > 0) { buf[i++] = '0' + (n % 10); n /= 10; }
+    while (i > 0) putchar(buf[--i]);
+}
+
 /* ---------- Клавиатура ---------- */
-static const char kbd_map[128] = {
+/* Обычная раскладка (без Shift) */
+/* Обычная раскладка (без Shift) */
+static const char kbd_map_lower[128] = {
     0,  27, '1','2','3','4','5','6','7','8','9','0','-','=', '\b',
     '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n',
     0,  'a','s','d','f','g','h','j','k','l',';','\'','`',
@@ -107,12 +118,58 @@ static const char kbd_map[128] = {
     0,  '*', 0,  ' '
 };
 
+/* Раскладка с Shift */
+static const char kbd_map_upper[128] = {
+    0,  27, '!','@','#','$','%','^','&','*','(',')','_','+', '\b',
+    '\t','Q','W','E','R','T','Y','U','I','O','P','{','}','\n',
+    0,  'A','S','D','F','G','H','J','K','L',':','"','~',
+    0,  '|','Z','X','C','V','B','N','M','<','>','?',
+    0,  '*', 0,  ' '
+};
+
+static int shift_pressed = 0;
+static int ctrl_pressed = 0;
+
+/* Специальные коды для Ctrl-комбинаций */
+#define KEY_CTRL_Q  1
+#define KEY_CTRL_S  2
+#define KEY_ESC     27
+
 char get_key() {
     while (1) {
         if (inb(0x64) & 0x01) {
             unsigned char sc = inb(0x60);
+
+            /* Отпускание клавиши */
+            if (sc & 0x80) {
+                unsigned char released = sc & 0x7F;
+                if (released == 0x2A || released == 0x36) shift_pressed = 0;
+                if (released == 0x1D) ctrl_pressed = 0;
+                continue;
+            }
+
+            /* Нажатие Shift */
+            if (sc == 0x2A || sc == 0x36) {
+                shift_pressed = 1;
+                continue;
+            }
+
+            /* Нажатие Ctrl */
+            if (sc == 0x1D) {
+                ctrl_pressed = 1;
+                continue;
+            }
+
+            /* Обычные клавиши */
             if (sc < 128) {
-                char c = kbd_map[sc];
+                char c = shift_pressed ? kbd_map_upper[sc] : kbd_map_lower[sc];
+
+                /* Обработка Ctrl-комбинаций */
+                if (ctrl_pressed) {
+                    if (c == 'q' || c == 'Q') return KEY_CTRL_Q;
+                    if (c == 's' || c == 'S') return KEY_CTRL_S;
+                }
+
                 if (c) return c;
             }
         }
@@ -122,7 +179,7 @@ char get_key() {
 /* ---------- Файловая система (в RAM) ---------- */
 #define FS_MAX_FILES 10
 #define FS_NAME_LEN  32
-#define FS_DATA_LEN  1024
+#define FS_DATA_LEN  4096
 
 typedef struct {
     char name[FS_NAME_LEN];
@@ -138,6 +195,7 @@ void fs_init() {
         fs_files[i].used = 0;
         fs_files[i].name[0] = 0;
         fs_files[i].size = 0;
+        fs_files[i].data[0] = 0;
     }
 }
 
@@ -155,6 +213,12 @@ int strncmp(const char* a, const char* b, int n) {
 void strcpy(char* dst, const char* src) {
     while (*src) *dst++ = *src++;
     *dst = 0;
+}
+
+int strlen(const char* s) {
+    int n = 0;
+    while (s[n]) n++;
+    return n;
 }
 
 int fs_create(const char* name) {
@@ -191,44 +255,6 @@ File* fs_find(const char* name) {
     return 0;
 }
 
-/* ---------- Запуск скриптов ---------- */
-void cpe_run(const char* filename);  /* прототип */
-void cai_run(const char* filename);  /* прототип (заглушка) */
-
-void run_script(const char* filename) {
-    /* Определяем расширение */
-    int len = 0;
-    while (filename[len]) len++;
-
-    if (len >= 4 && filename[len-4] == '.' &&
-        filename[len-3] == 'c' &&
-        filename[len-2] == 'p' &&
-        filename[len-1] == 'e') {
-        /* .cpe — прототип */
-        cpe_run(filename);
-        }
-    else if (len >= 4 && filename[len-4] == '.' &&
-             filename[len-3] == 'c' &&
-             filename[len-2] == 'a' &&
-             filename[len-1] == 'i') {
-        /* .cai — финальный формат */
-        cai_run(filename);
-             }
-    else {
-        print("Unknown script format: ");
-        print(filename);
-        print("\nSupported: .cpe (prototype), .cai (v1.0)\n");
-    }
-}
-
-void cai_run(const char* filename) {
-    print_color(".cai: ", LIGHT_YELLOW);
-    print(filename);
-    print("\n");
-    print("CAI runtime will be implemented in v1.0.\n");
-    print("Format: header + bytecode + resources.\n");
-}
-
 void fs_list() {
     int count = 0;
     for (int i = 0; i < FS_MAX_FILES; i++) {
@@ -236,13 +262,7 @@ void fs_list() {
             print("  ");
             print(fs_files[i].name);
             print("  (");
-            // Размер файла
-            char buf[12];
-            int n = fs_files[i].size;
-            int j = 0;
-            if (n == 0) buf[j++] = '0';
-            while (n > 0) { buf[j++] = '0' + (n % 10); n /= 10; }
-            while (j > 0) putchar(buf[--j]);
+            print_dec(fs_files[i].size);
             print(" bytes)\n");
             count++;
         }
@@ -256,16 +276,22 @@ static int  nano_size = 0;
 static char nano_filename[FS_NAME_LEN];
 
 void nano_open(const char* filename) {
-    strcpy(nano_filename, filename);
     File* f = fs_find(filename);
 
-    if (f) {
-        strcpy(nano_buffer, f->data);
-        nano_size = f->size;
-    } else {
-        nano_buffer[0] = 0;
-        nano_size = 0;
+    if (!f) {
+        print_color("nano: file not found: ", LIGHT_RED);
+        print(filename);
+        putchar('\n');
+        print("Use 'touch ");
+        print(filename);
+        print("' to create it.\n");
+        return;
     }
+
+    strcpy(nano_filename, filename);
+    for (int i = 0; i < f->size; i++) nano_buffer[i] = f->data[i];
+    nano_buffer[f->size] = 0;
+    nano_size = f->size;
 
     clear_screen();
     print_color("nano: ", LIGHT_CYAN);
@@ -279,25 +305,22 @@ void nano_open(const char* filename) {
     while (1) {
         char c = get_key();
 
-        /* Ctrl+Q — выход */
-        if (c == 17) {
+        if (c == KEY_CTRL_Q) {  /* Ctrl+Q */
             clear_screen();
             return;
         }
-        /* Ctrl+S — сохранение */
-        if (c == 19) {
-            File* file = fs_find(nano_filename);
-            if (!file) {
-                fs_create(nano_filename);
-                file = fs_find(nano_filename);
-            }
-            if (file) {
-                for (int i = 0; i < pos; i++) file->data[i] = nano_buffer[i];
-                file->data[pos] = 0;
-                file->size = pos;
-                print("\n[saved]\n");
-            }
+        if (c == KEY_CTRL_S) {  /* Ctrl+S */
+            for (int i = 0; i < pos; i++) f->data[i] = nano_buffer[i];
+            f->data[pos] = 0;
+            f->size = pos;
+            print_color("\n[saved ", LIGHT_GREEN);
+            print_dec(pos);
+            print_color(" bytes]\n", LIGHT_GREEN);
             continue;
+        }
+        if (c == KEY_ESC) {  /* Esc — тоже выход */
+            clear_screen();
+            return;
         }
 
         if (c == '\n') {
@@ -326,17 +349,190 @@ void nano_open(const char* filename) {
     }
 }
 
-/* ---------- .cpe (заготовка) ---------- */
+/* ============================================
+   .cpe — простой Python-подобный интерпретатор
+   Поддерживает:
+     print("text")
+     print(variable)
+     x = 5
+     x = "string"
+   ============================================ */
+
+/* Переменные */
+#define CPE_MAX_VARS 16
+#define CPE_VAR_NAME 32
+#define CPE_VAR_VAL  128
+
+typedef struct {
+    char name[CPE_VAR_NAME];
+    char value[CPE_VAR_VAL];
+    int  is_string;
+} CpeVar;
+
+static CpeVar cpe_vars[CPE_MAX_VARS];
+static int    cpe_var_count = 0;
+
+void cpe_vars_reset() {
+    cpe_var_count = 0;
+    for (int i = 0; i < CPE_MAX_VARS; i++) {
+        cpe_vars[i].name[0] = 0;
+        cpe_vars[i].value[0] = 0;
+        cpe_vars[i].is_string = 0;
+    }
+}
+
+CpeVar* cpe_find_var(const char* name) {
+    for (int i = 0; i < cpe_var_count; i++) {
+        if (strcmp(cpe_vars[i].name, name) == 0) return &cpe_vars[i];
+    }
+    return 0;
+}
+
+void cpe_set_var(const char* name, const char* value, int is_string) {
+    CpeVar* v = cpe_find_var(name);
+    if (!v) {
+        if (cpe_var_count >= CPE_MAX_VARS) return;
+        v = &cpe_vars[cpe_var_count++];
+        strcpy(v->name, name);
+    }
+    strcpy(v->value, value);
+    v->is_string = is_string;
+}
+
+/* Пропустить пробелы */
+const char* cpe_skip_ws(const char* p) {
+    while (*p == ' ' || *p == '\t') p++;
+    return p;
+}
+
+/* Прочитать строку в кавычках */
+const char* cpe_read_string(const char* p, char* out) {
+    p = cpe_skip_ws(p);
+    if (*p != '"') return 0;
+    p++;
+    int i = 0;
+    while (*p && *p != '"' && i < CPE_VAR_VAL - 1) {
+        out[i++] = *p++;
+    }
+    out[i] = 0;
+    if (*p == '"') p++;
+    return p;
+}
+
+/* Прочитать идентификатор/число */
+const char* cpe_read_token(const char* p, char* out) {
+    p = cpe_skip_ws(p);
+    int i = 0;
+    while (*p && *p != ' ' && *p != '\t' && *p != '\n' &&
+           *p != '(' && *p != ')' && *p != '=' && *p != '"' &&
+           i < CPE_VAR_VAL - 1) {
+        out[i++] = *p++;
+    }
+    out[i] = 0;
+    return p;
+}
+
+/* Выполнить одну строку */
+void cpe_exec_line(const char* line) {
+    const char* p = cpe_skip_ws(line);
+
+    /* Пропускаем пустые строки и комментарии */
+    if (*p == 0 || *p == '#') return;
+
+    /* print(...) */
+    if (strncmp(p, "print", 5) == 0) {
+        p = cpe_skip_ws(p + 5);
+        if (*p == '(') {
+            p++;
+            p = cpe_skip_ws(p);
+
+            if (*p == '"') {
+                char buf[CPE_VAR_VAL];
+                p = cpe_read_string(p, buf);
+                print(buf);
+                putchar('\n');
+            } else {
+                char token[CPE_VAR_VAL];
+                p = cpe_read_token(p, token);
+                if (token[0]) {
+                    CpeVar* v = cpe_find_var(token);
+                    if (v) {
+                        print(v->value);
+                        putchar('\n');
+                    } else {
+                        print(token);
+                        putchar('\n');
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    /* Присваивание: name = value */
+    char name[CPE_VAR_NAME];
+    const char* q = cpe_read_token(p, name);
+    q = cpe_skip_ws(q);
+    if (*q == '=') {
+        q++;
+        q = cpe_skip_ws(q);
+
+        if (*q == '"') {
+            char buf[CPE_VAR_VAL];
+            q = cpe_read_string(q, buf);
+            cpe_set_var(name, buf, 1);
+        } else {
+            char buf[CPE_VAR_VAL];
+            q = cpe_read_token(q, buf);
+            cpe_set_var(name, buf, 0);
+        }
+    }
+}
+
+/* Запустить .cpe файл */
 void cpe_run(const char* filename) {
-    print_color(".cpe: ", LIGHT_YELLOW);
+    File* f = fs_find(filename);
+
+    if (!f) {
+        print_color("cpe: file not found: ", LIGHT_RED);
+        print(filename);
+        putchar('\n');
+        return;
+    }
+
+    cpe_vars_reset();
+
+    char line[256];
+    int line_len = 0;
+
+    for (int i = 0; i < f->size; i++) {
+        char c = f->data[i];
+        if (c == '\n' || line_len >= 255) {
+            line[line_len] = 0;
+            cpe_exec_line(line);
+            line_len = 0;
+        } else {
+            line[line_len++] = c;
+        }
+    }
+    if (line_len > 0) {
+        line[line_len] = 0;
+        cpe_exec_line(line);
+    }
+}
+
+/* ---------- .cai (заглушка v1.0) ---------- */
+void cai_run(const char* filename) {
+    print_color("cai: ", LIGHT_YELLOW);
     print(filename);
-    print("\n");
-    print("CPE runtime not implemented yet.\n");
-    print("Coming in v1.0 (built-in Python-like interpreter).\n");
+    putchar('\n');
+    print("CAI runtime will be implemented in v1.0.\n");
+    print("Format: header + bytecode + resources.\n");
+    print("Note: .cai must be installed before running.\n");
 }
 
 /* ---------- Shell ---------- */
-static char cmd_buffer[64];
+static char cmd_buffer[128];
 
 void shell_read_line() {
     int i = 0;
@@ -354,7 +550,7 @@ void shell_read_line() {
             }
             continue;
         }
-        if (i < 63) {
+        if (i < 127) {
             cmd_buffer[i++] = c;
             putchar(c);
         }
@@ -372,7 +568,8 @@ void cmd_help() {
     print("  touch X      - create file X\n");
     print("  rm X         - delete file X\n");
     print("  nano X       - edit file X\n");
-    print("  cpe X        - run .cpe script\n");
+    print("  cpe X        - run .cpe script (Python-like)\n");
+    print("  run X        - run .cai application (v1.0)\n");
     print("  heap         - heap statistics\n");
     print("  reboot       - reboot\n");
 }
@@ -383,7 +580,7 @@ void cmd_about() {
 }
 
 void cmd_ver() {
-    print("Colibri OS v0.4 (heap + nano + cpe)\n");
+    print("Colibri OS v0.5 (heap + nano + cpe interpreter)\n");
 }
 
 void cmd_echo(const char* arg) {
@@ -446,10 +643,17 @@ void parse_command() {
         return;
     }
 
+    if (strncmp(cmd_buffer, "cpe ", 4) == 0) {
+        const char* name = cmd_buffer + 4;
+        if (name[0] == 0) { print("Usage: cpe <file.cpe>\n"); return; }
+        cpe_run(name);
+        return;
+    }
+
     if (strncmp(cmd_buffer, "run ", 4) == 0) {
         const char* name = cmd_buffer + 4;
-        if (name[0] == 0) { print("Usage: run <file.cpe|file.cai>\n"); return; }
-        run_script(name);
+        if (name[0] == 0) { print("Usage: run <file.cai>\n"); return; }
+        cai_run(name);
         return;
     }
 
@@ -467,9 +671,9 @@ void shell_loop() {
 }
 
 void print_banner() {
-    print_color("Colibri OS v0.4\n", LIGHT_CYAN);
+    print_color("Colibri OS v0.5\n", LIGHT_CYAN);
     print_color("================\n", LIGHT_CYAN);
-    print("Heap initialized, nano and cpe ready.\n");
+    print("Heap + nano + cpe interpreter ready.\n");
     print("Type 'help' for commands.\n\n");
 }
 
