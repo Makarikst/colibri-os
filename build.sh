@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# Colibri OS — сборка
+# Colibri OS — сборка v0.4
 # ============================================
 
 GCC=x86_64-elf-gcc
@@ -12,19 +12,17 @@ $GCC -m16 -ffreestanding -c boot.S -o boot.o
 $LD -m elf_i386 -Ttext 0x7C00 -o boot.elf boot.o
 $OBJCOPY -O binary boot.elf boot.bin
 
-if [ $? -ne 0 ]; then
-    echo "❌ Ошибка сборки boot.S"
-    exit 1
-fi
-
 echo "🔨 Сборка точки входа..."
 $GCC -m32 -ffreestanding -fno-pie -c kernel_entry.S -o kernel_entry.o
+
+echo "🔨 Сборка кучи..."
+$GCC -m32 -ffreestanding -fno-pie -fno-stack-protector -c kmalloc.c -o kmalloc.o
 
 echo "🔨 Сборка ядра..."
 $GCC -m32 -ffreestanding -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
 
 echo "🔗 Линковка ядра..."
-$LD -m elf_i386 -T linker.ld -o kernel.elf kernel_entry.o kernel.o
+$LD -m elf_i386 -T linker.ld -o kernel.elf kernel_entry.o kmalloc.o kernel.o
 $OBJCOPY -O binary kernel.elf kernel.bin
 
 if [ $? -ne 0 ]; then
