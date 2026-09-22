@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# Colibri OS — сборка v0.4
+# Colibri OS — сборка v0.5
 # ============================================
 
 GCC=x86_64-elf-gcc
@@ -30,13 +30,16 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "💾 Создание образа..."
-dd if=/dev/zero of=colibri.img bs=512 count=2880 2>/dev/null
-dd if=boot.bin of=colibri.img bs=512 count=1 conv=notrunc 2>/dev/null
-dd if=kernel.bin of=colibri.img bs=512 seek=1 conv=notrunc 2>/dev/null
+echo "💾 Создание образа Colibri OS (.cos)..."
+dd if=/dev/zero of=colibri.cos bs=512 count=2880 2>/dev/null
+dd if=boot.bin of=colibri.cos bs=512 count=1 conv=notrunc 2>/dev/null
+dd if=kernel.bin of=colibri.cos bs=512 seek=1 conv=notrunc 2>/dev/null
 
 echo "📏 Размер boot.bin:"
 ls -lh boot.bin
 
+echo "📦 Образ: colibri.cos"
+ls -lh colibri.cos
+
 echo "🚀 Запуск QEMU..."
-qemu-system-i386 -drive file=colibri.img,format=raw,if=ide,snapshot=on -net none
+qemu-system-i386 -drive file=colibri.cos,format=raw,if=ide,snapshot=on -net none

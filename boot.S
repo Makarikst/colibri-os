@@ -7,7 +7,7 @@
 .global _start
 
 .equ KERNEL_OFFSET,  0x1000
-.equ KERNEL_SECTORS, 17
+.equ KERNEL_SECTORS, 40
 
 _start:
     cli
