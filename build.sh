@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# Colibri OS — сборка v0.5
+# Colibri OS — сборка v0.8 (VESA)
 # ============================================
 
 GCC=x86_64-elf-gcc
@@ -11,6 +11,11 @@ echo "🔨 Сборка загрузчика..."
 $GCC -m16 -ffreestanding -c boot.S -o boot.o
 $LD -m elf_i386 -Ttext 0x7C00 -o boot.elf boot.o
 $OBJCOPY -O binary boot.elf boot.bin
+
+if [ $? -ne 0 ]; then
+    echo "❌ Ошибка сборки boot.S"
+    exit 1
+fi
 
 echo "🔨 Сборка точки входа..."
 $GCC -m32 -ffreestanding -fno-pie -c kernel_entry.S -o kernel_entry.o
@@ -23,7 +28,7 @@ $GCC -m32 -ffreestanding -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
 
 echo "🔗 Линковка ядра..."
 $LD -m elf_i386 -T linker.ld -o kernel.elf kernel_entry.o kmalloc.o kernel.o
-$OBJCOPY -O binary kernel.elf kernel.bin
+$LD -m elf_i386 -T linker.ld --oformat binary -o kernel.bin kernel_entry.o kmalloc.o kernel.o
 
 if [ $? -ne 0 ]; then
     echo "❌ Ошибка линковки"
@@ -37,9 +42,10 @@ dd if=kernel.bin of=colibri.cos bs=512 seek=1 conv=notrunc 2>/dev/null
 
 echo "📏 Размер boot.bin:"
 ls -lh boot.bin
-
-echo "📦 Образ: colibri.cos"
+echo "📦 Размер kernel.bin:"
+ls -lh kernel.bin
+echo "📦 Образ:"
 ls -lh colibri.cos
 
 echo "🚀 Запуск QEMU..."
-qemu-system-i386 -drive file=colibri.cos,format=raw,if=ide,snapshot=on -net none
+qemu-system-i386 -drive file=colibri.cos,format=raw,if=floppy,snapshot=on -net none -vga std

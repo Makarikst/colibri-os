@@ -1,13 +1,9 @@
-/* ============================================
-   Colibri OS — Bootloader (MBR, 16-bit)
-   ============================================ */
-
 .code16
-.section .text
 .global _start
 
-.equ KERNEL_OFFSET,  0x1000
+.equ KERNEL_SEG,     0x1000
 .equ KERNEL_SECTORS, 40
+.equ VBE_MODE_ADDR,  0x7200
 
 _start:
     cli
@@ -17,122 +13,184 @@ _start:
     movw %ax, %ss
     movw $0x7C00, %sp
 
-    /* ТЕСТ 1: пишем 'A' в VGA напрямую */
-    movw $0xB800, %ax
-    movw %ax, %es
-    xorw %di, %di
-    movb $'A', %es:(%di)
-    movb $0x0F, %es:1(%di)
-
-    /* Возвращаем es = 0 */
-    xorw %ax, %ax
-    movw %ax, %es
-
     movb %dl, boot_drive
 
-    movw $msg_loading, %si
-    call print_string
+    /* ========================================
+       ШАГ 1: Читаем ядро (в текстовом режиме)
+       ======================================== */
+    movb $'r', %al
+    movw $0xE9, %dx
+    outb %al, %dx
 
-    sti
+    movw $KERNEL_SEG, %ax
+    movw %ax, %es
+    xorw %bx, %bx
+    movw $KERNEL_SECTORS, %si
 
-    /* Загружаем ядро */
-    movw $KERNEL_OFFSET, %bx
-    movb $KERNEL_SECTORS, %dh
+    movb $0x00, %ch
+    movb $0x00, %dh
+    movb $0x02, %cl
+
+.read_loop:
+    movb $0x02, %ah
+    movb $1, %al
     movb boot_drive, %dl
-    call load_kernel
+    int $0x13
+    jc disk_error
 
-    cli
+    movb $'.', %al
+    movw $0xE9, %dx
+    outb %al, %dx
 
-    /* ТЕСТ 2: пишем 'B' в VGA после загрузки ядра */
-    movw $0xB800, %ax
+    addw $512, %bx
+    incb %cl
+    cmpb $19, %cl
+    jb .no_inc
+    movb $1, %cl
+    incb %dh
+    cmpb $2, %dh
+    jb .no_inc
+    movb $0, %dh
+    incb %ch
+.no_inc:
+
+    testw %bx, %bx
+    jnz .no_es
+    movw %es, %ax
+    addw $0x1000, %ax
     movw %ax, %es
-    movw $4, %di
-    movb $'B', %es:(%di)
-    movb $0x0F, %es:1(%di)
+.no_es:
 
-    xorw %ax, %ax
-    movw %ax, %es
+    decw %si
+    jnz .read_loop
 
-    movw $msg_jumping, %si
-    call print_string
+    movb $'R', %al
+    movw $0xE9, %dx
+    outb %al, %dx
 
     /* ========================================
-       ПЕРЕХОД В PROTECTED MODE
+       ШАГ 2: VESA (в текстовом режиме)
        ======================================== */
+    movw $0x7000, %di
+    movw $0x4F00, %ax
+    movw $0x0000, %bx
+    int $0x10
+    cmpw $0x4F, %ax
+    jne vesa_fail
+
+    movb $'C', %al
+    movw $0xE9, %dx
+    outb %al, %dx
+
+    /* Ищем режим */
+    movw $0x7000, %si
+    movw 14(%si), %si
+    cmpw $0x8000, %si
+    jb .mode_loop
+    movw %si, %ax
+    movw $0x7000, %si
+    movw %ax, %si
+
+.mode_loop:
+    movw (%si), %cx
+    cmpw $0xFFFF, %cx
+    je try_default_mode
+
+    /* Получаем Mode Info */
+    pushw %si
+    movw $0x7200, %di
+    movw $0x4F01, %ax
+    int $0x10
+    popw %si
+
+    cmpw $0x4F, %ax
+    jne .next_mode
+
+    /* Проверяем: не пустой ли режим */
+    movw $0x7200, %di
+    cmpw $0, 18(%di)
+    je .next_mode
+    cmpw $0, 20(%di)
+    je .next_mode
+    cmpb $0, 25(%di)
+    je .next_mode
+
+    /* ========================================
+       Нашли режим! Устанавливаем
+       ======================================== */
+    movw %cx, %bx
+    movw $0x4F02, %ax
+    orw $0x4000, %bx
+    int $0x10
+    cmpw $0x4F, %ax
+    jne .next_mode
+
+    movb $'S', %al
+    movw $0xE9, %dx
+    outb %al, %dx
+    jmp vesa_ok
+
+.next_mode:
+    addw $2, %si
+    jmp .mode_loop
+
+try_default_mode:
+    /* Пробуем стандартный режим 0x118 (1024x768x24) */
+    movw $0x118, %bx
+    movw $0x4F02, %ax
+    orw $0x4000, %bx
+    int $0x10
+    cmpw $0x4F, %ax
+    jne vesa_fail
+
+    movb $'S', %al
+    movw $0xE9, %dx
+    outb %al, %dx
+    jmp vesa_ok
+
+vesa_fail:
+    movb $'V', %al
+    movw $0xE9, %dx
+    outb %al, %dx
+1:  jmp 1b
+
+vesa_ok:
+    movb $'J', %al
+    movw $0xE9, %dx
+    outb %al, %dx
+
     cli
     lgdt gdt_descriptor
-
-    /* ТЕСТ 3: пишем 'C' после lgdt */
-    movw $0xB800, %ax
-    movw %ax, %es
-    movw $8, %di
-    movb $'C', %es:(%di)
-    movb $0x0F, %es:1(%di)
-
-    xorw %ax, %ax
-    movw %ax, %es
 
     movl %cr0, %eax
     orl $0x1, %eax
     movl %eax, %cr0
 
-    /* Дальний прыжок в 32-битный сегмент */
+    movl $VBE_MODE_ADDR, %ebx
+
     .byte 0x66, 0xEA
-    .long 0x00001000
+    .long 0x00010000
     .word 0x0008
 
-/* ============================================
-   16-битные функции
-   ============================================ */
-print_string:
-    movb $0x0E, %ah
-1:
-    lodsb
-    testb %al, %al
-    jz 2f
-    int $0x10
-    jmp 1b
-2:
-    ret
-
-load_kernel:
-    movb $0x02, %ah
-    movb %dh, %al
-    movb $0x00, %ch
-    movb $0x00, %dh
-    movb $0x02, %cl
-    int $0x13
-    jc disk_error
-    ret
-
 disk_error:
-    movw $msg_disk_error, %si
-    call print_string
-    jmp .
+    movb $'D', %al
+    movw $0xE9, %dx
+    outb %al, %dx
+1:  jmp 1b
 
-/* ============================================
-   GDT
-   ============================================ */
 .align 8
 gdt_start:
-    .quad 0x0000000000000000
+    .quad 0
 gdt_code:
     .quad 0x00CF9A000000FFFF
 gdt_data:
     .quad 0x00CF92000000FFFF
 gdt_end:
-
 gdt_descriptor:
     .word gdt_end - gdt_start - 1
     .long gdt_start
 
-/* ============================================
-   Данные
-   ============================================ */
-boot_drive:     .byte 0
-msg_loading:    .asciz "Colibri: loading kernel...\r\n"
-msg_jumping:    .asciz "Colibri: jumping to kernel...\r\n"
-msg_disk_error: .asciz "Colibri: disk read error!\r\n"
+boot_drive: .byte 0
 
 .org 510
 .word 0xAA55
