@@ -1,3 +1,4 @@
+[English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md)
 <h1>Colibri OS</h1>
 
 ![版本](https://img.shields.io/badge/version-0.8-blue)
