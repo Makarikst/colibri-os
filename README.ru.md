@@ -1,3 +1,4 @@
+[English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md)
 <h1>Colibri OS</h1>
 <h3>v0.8 вышла 26 сентября 2026 года</h3>
 
