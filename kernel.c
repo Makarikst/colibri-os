@@ -1,5 +1,5 @@
 /* ============================================
-   Colibri OS - Ядро v0.8 (FULL)
+   Colibri OS - Ядро v0.8x (FULL)
    VGA + Shell + FS + Math + Process + Net + Env + Alias + Scroll
    Все команды из help. Подключён utils.h.
    ============================================ */
@@ -72,11 +72,18 @@ void scroll_buffer_putchar(char c) {
                 scroll_col[sb_line][j] = color;
             }
         }
-        if (scroll_total < SCROLL_LINES) scroll_total++;
+        if (sb_line + 1 > scroll_total) {
+            scroll_total = sb_line + 1;
+            if (scroll_total > SCROLL_LINES) scroll_total = SCROLL_LINES;
+        }
         return;
     }
     if (c == '\b') {
-        if (sb_col > 0) { sb_col--; scroll_buf[sb_line][sb_col] = ' '; scroll_col[sb_line][sb_col] = color; }
+        if (sb_col > 0) {
+            sb_col--;
+            scroll_buf[sb_line][sb_col] = ' ';
+            scroll_col[sb_line][sb_col] = color;
+        }
         return;
     }
     if ((unsigned char)c < 32) return;
@@ -91,11 +98,16 @@ void scroll_buffer_putchar(char c) {
                 }
             sb_line = SCROLL_LINES - 1;
         }
-        if (scroll_total < SCROLL_LINES) scroll_total++;
     }
     scroll_buf[sb_line][sb_col] = c;
     scroll_col[sb_line][sb_col] = color;
     sb_col++;
+
+    /* Автоскролл: если пользователь не листал вверх — окно двигается вниз */
+    if (sb_line + 1 > scroll_total) {
+        scroll_total = sb_line + 1;
+        if (scroll_total > SCROLL_LINES) scroll_total = SCROLL_LINES;
+    }
 }
 
 void clear_screen() {
@@ -152,7 +164,7 @@ void draw_banner() {
     print_color(" | |__| (_) | | | |_) | |  | |\n", LIGHT_CYAN);
     print_color("  \\____\\___/|_|_|_.__/|_|  |_|\n", LIGHT_CYAN);
     print("\n");
-    print_color("       Colibri OS v0.8\n", LIGHT_GREEN);
+    print_color("       Colibri OS v0.8x\n", LIGHT_GREEN);
     print("");
     print("Type ");
     print_color("'help'", LIGHT_YELLOW);
@@ -187,11 +199,11 @@ static int extended = 0;
 #define KEY_CTRL_L 4
 #define KEY_CTRL_D 5
 #define KEY_ESC    27
-#define KEY_UP     100
-#define KEY_DOWN   101
-#define KEY_LEFT   102
-#define KEY_RIGHT  103
-#define KEY_TAB    104
+#define KEY_UP     (-1)
+#define KEY_DOWN   (-2)
+#define KEY_LEFT   (-3)
+#define KEY_RIGHT  (-4)
+#define KEY_TAB    (-5)
 
 char get_key() {
     while (1) {
@@ -229,7 +241,7 @@ char get_key() {
     }
 }
 
-static char try_get_key() {
+/*static char try_get_key() {
     if (!(inb(0x64) & 0x01)) return 0;
     unsigned char sc = inb(0x60);
     if (sc == 0xE0) { extended = 1; return 0; }
@@ -261,7 +273,7 @@ static char try_get_key() {
         return c;
     }
     return 0;
-}
+} */
 
 static void handle_scroll_key(char c) {
     if (c == KEY_UP) {
@@ -277,16 +289,16 @@ static void handle_scroll_key(char c) {
     }
 }
 
-void pause_with_scroll() {
-    while (1) {
-        char c = try_get_key();
-        if (c == KEY_UP || c == KEY_DOWN) {
-            handle_scroll_key(c);
-            continue;
-        }
-        if (c != 0) return;
-    }
-}
+//void pause_with_scroll() {
+//    while (1) {
+//        char c = try_get_key();
+//        if (c == KEY_UP || c == KEY_DOWN) {
+//            handle_scroll_key(c);
+//            continue;
+//        }
+//        if (c != 0) return;
+//    }
+//}
 
 /* ============================================
    Env
@@ -616,7 +628,7 @@ static const char* net_gw   = "10.0.2.2";
    System commands
    ============================================ */
 void cmd_help() {
-    print_color("=== Colibri OS v0.8 - Commands ===\n", LIGHT_CYAN);
+    print_color("=== Colibri OS v0.8x - Commands ===\n", LIGHT_CYAN);
     print_color("--- System ---\n", LIGHT_YELLOW);
     print("  help          - this help\n");
     print("  ver           - version\n");
@@ -684,11 +696,9 @@ void cmd_help() {
     print("  alias X=Y     - set alias\n");
     print("  unalias X     - remove alias\n");
     print("\n");
-    print_color("Scroll: Arrow Up / Down, any key to continue...\n", LIGHT_GREEN);
-    pause_with_scroll();
 }
 
-void cmd_ver() { print("Colibri OS v0.8 (full, with utils)\n"); }
+void cmd_ver() { print("Colibri OS v0.8x (full, with utils)\n"); }
 
 void cmd_pwd_no_newline() {
     int stack[FS_MAX_OBJECTS];
@@ -1405,27 +1415,35 @@ static void shell_putchar(char c) {
 }
 
 void shell_prompt() {
-    shell_row = 10;          /* после баннера */
-    shell_col = 0;
-    shell_puts("colibri:/users/alpha> ");
+    /* Перед выводом приглашения гарантируем, что строка попадёт в окно */
+    if (sb_line >= SCROLL_LINES) sb_line = SCROLL_LINES - 1;
+    if (sb_line + 1 > scroll_total) {
+        scroll_total = sb_line + 1;
+        if (scroll_total > SCROLL_LINES) scroll_total = SCROLL_LINES;
+    }
+    print_color("colibri:", LIGHT_GREEN);
+    cmd_pwd_no_newline();
+    print("> ");
 }
 
-void shell_run() {
-    /* Устанавливаем курсор сразу после баннера */
-    shell_row = 14;
-    shell_col = 0;
+static char input_buf[LINE_MAX];
 
+void shell_run() {
     while (1) {
         shell_prompt();
-
         input_len = 0;
         input_buf[0] = 0;
 
         while (1) {
             char c = get_key();
 
+            if (c == KEY_UP || c == KEY_DOWN) {
+                handle_scroll_key(c);
+                continue;
+            }
+
             if (c == '\n') {
-                shell_putchar('\n');
+                putchar('\n');
                 input_buf[input_len] = 0;
                 break;
             }
@@ -1433,14 +1451,15 @@ void shell_run() {
                 if (input_len > 0) {
                     input_len--;
                     input_buf[input_len] = 0;
-                    shell_putchar('\b');
+                    putchar('\b');
                 }
                 continue;
             }
+            if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_TAB) continue;
             if ((unsigned char)c < 32) continue;
-            if (input_len < 255) {
+            if (input_len < LINE_MAX - 1) {
                 input_buf[input_len++] = c;
-                shell_putchar(c);
+                putchar(c);
             }
         }
 
