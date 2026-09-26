@@ -172,3 +172,5 @@ Issues, bugs, ideas — open an [issue](https://github.com/Makarikst/colibri-os/
 ---
 
 *Colibri is the smallest bird in the world. Just like this OS.*
+
+*And I need a crew*
