@@ -1303,6 +1303,7 @@ static int find_redirect(char tokens[][128], int n, int* append) {
     }
     return -1;
 }
+static char expr_buf[LINE_MAX];
 
 void shell_execute(char* line) {
     trim(line);
@@ -1317,9 +1318,21 @@ void shell_execute(char* line) {
         return;
     }
 
+    // Вытаскиваем имя команды ДО tokenize() — чтобы не ломать line
+    char cmd_buf[128];
+    const char* p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    int ci = 0;
+    while (*p && *p != ' ' && *p != '\t' && ci < 127) {
+        cmd_buf[ci++] = *p++;
+    }
+    cmd_buf[ci] = 0;
+
     char tokens[16][128];
     int n = tokenize(line, tokens, 16);
     if (n == 0) return;
+
+    const char* cmd = cmd_buf;
 
     int append = 0;
     int redir = find_redirect(tokens, n, &append);
@@ -1334,8 +1347,6 @@ void shell_execute(char* line) {
         return;
     }
 
-    const char* cmd = tokens[0];
-
     /* System */
     if (strcmp(cmd, "help") == 0) cmd_help();
     else if (strcmp(cmd, "ver") == 0) cmd_ver();
@@ -1349,6 +1360,7 @@ void shell_execute(char* line) {
     else if (strcmp(cmd, "color") == 0) { if (n > 1) cmd_color(tokens[1]); else print("Usage: color <0-15>\n"); }
     else if (strcmp(cmd, "reboot") == 0) cmd_reboot();
     else if (strcmp(cmd, "shutdown") == 0) cmd_shutdown();
+
     /* Files */
     else if (strcmp(cmd, "ls") == 0) cmd_ls(n > 1 ? tokens[1] : "");
     else if (strcmp(cmd, "pwd") == 0) cmd_pwd();
@@ -1392,16 +1404,17 @@ void shell_execute(char* line) {
     else if (strcmp(cmd, "grep") == 0) { if (n > 2) cmd_grep(tokens[1], tokens[2]); else print("Usage: grep <pat> <file>\n"); }
     else if (strcmp(cmd, "sort") == 0) { if (n > 1) cmd_sort(tokens[1]); else print("Usage: sort <file>\n"); }
     else if (strcmp(cmd, "hexdump") == 0) { if (n > 1) cmd_hexdump(tokens[1]); else print("Usage: hexdump <file>\n"); }
+
     /* Math */
     else if (strcmp(cmd, "calc") == 0) {
         if (n < 2) { print("Usage: calc <expr>\n"); }
         else {
-            char expr[LINE_MAX] = {0};
+            expr_buf[0] = 0;  // очищаем
             for (int i = 1; i < n; i++) {
-                if (i > 1) strncat(expr, " ", LINE_MAX - strlen(expr) - 1);
-                strncat(expr, tokens[i], LINE_MAX - strlen(expr) - 1);
+                if (i > 1) strncat(expr_buf, " ", LINE_MAX - strlen(expr_buf) - 1);
+                strncat(expr_buf, tokens[i], LINE_MAX - strlen(expr_buf) - 1);
             }
-            cmd_calc(expr);
+            cmd_calc(expr_buf);
         }
     }
     else if (strcmp(cmd, "sqrt") == 0) { if (n > 1) cmd_sqrt(tokens[1]); else print("Usage: sqrt <n>\n"); }
@@ -1412,6 +1425,7 @@ void shell_execute(char* line) {
     else if (strcmp(cmd, "lcm") == 0) { if (n > 2) cmd_lcm(tokens[1], tokens[2]); else print("Usage: lcm <a> <b>\n"); }
     else if (strcmp(cmd, "hex") == 0) { if (n > 1) cmd_hex(tokens[1]); else print("Usage: hex <n>\n"); }
     else if (strcmp(cmd, "bin") == 0) { if (n > 1) cmd_bin(tokens[1]); else print("Usage: bin <n>\n"); }
+
     /* Misc */
     else if (strcmp(cmd, "echo") == 0) {
         for (int i = 1; i < n; i++) { if (i > 1) putchar(' '); print(tokens[i]); }
@@ -1419,13 +1433,16 @@ void shell_execute(char* line) {
     }
     else if (strcmp(cmd, "sleep") == 0) { if (n > 1) cmd_sleep(tokens[1]); else print("Usage: sleep <ms>\n"); }
     else if (strcmp(cmd, "beep") == 0) cmd_beep();
+
     /* Process */
     else if (strcmp(cmd, "ps") == 0) cmd_ps();
     else if (strcmp(cmd, "spawn") == 0) { if (n > 1) cmd_spawn(tokens[1]); else print("Usage: spawn <name>\n"); }
     else if (strcmp(cmd, "kill") == 0) { if (n > 1) cmd_kill(tokens[1]); else print("Usage: kill <pid>\n"); }
+
     /* Net */
     else if (strcmp(cmd, "ifconfig") == 0) cmd_ifconfig();
     else if (strcmp(cmd, "ping") == 0) { if (n > 1) cmd_ping(tokens[1]); else print("Usage: ping <host>\n"); }
+
     /* Env / Alias */
     else if (strcmp(cmd, "env") == 0) cmd_env();
     else if (strcmp(cmd, "setenv") == 0) { if (n > 1) cmd_setenv(tokens[1]); else print("Usage: setenv K=V\n"); }
