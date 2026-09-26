@@ -553,36 +553,125 @@ void find_recursive(int dir_idx, const char* name, int* found) {
 /* ============================================
    Calculator
    ============================================ */
+static int calc_parse_primary(const char** p, int* ok);
+static int calc_parse_unary(const char** p, int* ok);
+static int calc_parse_power(const char** p, int* ok);
+static int calc_parse_term(const char** p, int* ok);
+static int calc_parse_expr(const char** p, int* ok);
+
+static void calc_skip_spaces(const char** p) {
+    while (**p == ' ' || **p == '\t' || **p == '\n' || **p == '\r') (*p)++;
+}
+
+static int calc_parse_primary(const char** p, int* ok) {
+    calc_skip_spaces(p);
+    if (!**p) { *ok = 0; return 0; }
+
+    if (**p == '(') {
+        (*p)++;
+        int value = calc_parse_expr(p, ok);
+        if (!*ok) return 0;
+        calc_skip_spaces(p);
+        if (**p != ')') { *ok = 0; return 0; }
+        (*p)++;
+        return value;
+    }
+
+    if (**p == '-' || **p == '+') {
+        char sign = **p;
+        (*p)++;
+        int value = calc_parse_primary(p, ok);
+        if (!*ok) return 0;
+        return sign == '-' ? -value : value;
+    }
+
+    if (*(*p) >= '0' && *(*p) <= '9') {
+        int value = 0;
+        while (*(*p) >= '0' && *(*p) <= '9') {
+            value = value * 10 + (*(*p) - '0');
+            (*p)++;
+        }
+        return value;
+    }
+
+    *ok = 0;
+    return 0;
+}
+
+static int calc_parse_power(const char** p, int* ok) {
+    int left = calc_parse_primary(p, ok);
+    if (!*ok) return 0;
+
+    calc_skip_spaces(p);
+    if (**p == '^') {
+        (*p)++;
+        int right = calc_parse_power(p, ok);
+        if (!*ok) return 0;
+        return pow_int(left, right);
+    }
+
+    return left;
+}
+
+static int calc_parse_term(const char** p, int* ok) {
+    int value = calc_parse_power(p, ok);
+    if (!*ok) return 0;
+
+    while (1) {
+        calc_skip_spaces(p);
+        if (!**p) break;
+
+        char op = **p;
+        if (op != '*' && op != '/' && op != '%') break;
+        (*p)++;
+
+        int rhs = calc_parse_power(p, ok);
+        if (!*ok) return 0;
+
+        if (op == '*') value *= rhs;
+        else if (op == '/') {
+            if (rhs == 0) { *ok = 0; return 0; }
+            value /= rhs;
+        } else {
+            if (rhs == 0) { *ok = 0; return 0; }
+            value %= rhs;
+        }
+    }
+
+    return value;
+}
+
+static int calc_parse_expr(const char** p, int* ok) {
+    int value = calc_parse_term(p, ok);
+    if (!*ok) return 0;
+
+    while (1) {
+        calc_skip_spaces(p);
+        if (!**p) break;
+
+        char op = **p;
+        if (op != '+' && op != '-') break;
+        (*p)++;
+
+        int rhs = calc_parse_term(p, ok);
+        if (!*ok) return 0;
+
+        if (op == '+') value += rhs;
+        else value -= rhs;
+    }
+
+    return value;
+}
+
 static int calc_expr(const char* expr, int* ok) {
-    int current = 0, have = 0, op = 0;
     const char* p = expr;
     *ok = 1;
-    while (*p) {
-        if (*p == ' ' || *p == '\t') { p++; continue; }
-        if (*p >= '0' && *p <= '9') {
-            int n = 0;
-            while (*p >= '0' && *p <= '9') { n = n * 10 + (*p - '0'); p++; }
-            if (!have) { current = n; have = 1; }
-            else {
-                if (op == 0) current += n;
-                else if (op == 1) current -= n;
-                else if (op == 2) current *= n;
-                else if (op == 3) { if (n == 0) { *ok = 0; return 0; } current /= n; }
-                else if (op == 4) { if (n == 0) { *ok = 0; return 0; } current %= n; }
-                else if (op == 5) current = pow_int(current, n);
-            }
-            continue;
-        }
-        if (*p == '+') { op = 0; p++; continue; }
-        if (*p == '-') { op = 1; p++; continue; }
-        if (*p == '*') { op = 2; p++; continue; }
-        if (*p == '/') { op = 3; p++; continue; }
-        if (*p == '%') { op = 4; p++; continue; }
-        if (*p == '^') { op = 5; p++; continue; }
-        *ok = 0; return 0;
-    }
-    if (!have) { *ok = 0; return 0; }
-    return current;
+    calc_skip_spaces(&p);
+    int value = calc_parse_expr(&p, ok);
+    if (!*ok) return 0;
+    calc_skip_spaces(&p);
+    if (*p != 0) { *ok = 0; return 0; }
+    return value;
 }
 
 /* ============================================
