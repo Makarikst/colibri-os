@@ -15,7 +15,7 @@ $GCC -m32 -ffreestanding -fno-pie -fno-stack-protector -c utils.c -o utils.o
 
 echo "=== Kernel ==="
 $GCC -m32 -ffreestanding -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
-
+# Link
 echo "=== Link ==="
 $LD -m elf_i386 -T linker.ld -o colibri.cos \
     --start-group \
