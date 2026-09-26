@@ -1,31 +1,45 @@
+# ============================================
+# Colibri OS - Multiboot entry
+# ============================================
+
+.set MAGIC,    0x1BADB002
+.set FLAGS,    0x00000003
+.set CHECKSUM, -(MAGIC + FLAGS)
+
+.section .multiboot, "a"
+.align 4
+    .long MAGIC
+    .long FLAGS
+    .long CHECKSUM
+
 .section .text
 .global _start
 .extern kernel_main
-.global vbe_mode_ptr
+.extern _bss_start
+.extern _bss_end
 
 .code32
 _start:
     cli
-
-    movl %ebx, vbe_mode_ptr
-
     movw $0x10, %ax
-    .byte 0x8E, 0xD8
-    .byte 0x8E, 0xC0
-    .byte 0x8E, 0xE0
-    .byte 0x8E, 0xE8
-    .byte 0x8E, 0xD0
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    movw %ax, %ss
 
-    movl $0x90000, %esp
-    movl $0x90000, %ebp
+    movl $0x9F000, %esp
+    movl $0x9F000, %ebp
+
+    # Clear BSS
+    movl $_bss_start, %edi
+    movl $_bss_end, %ecx
+    subl %edi, %ecx
+    xorl %eax, %eax
+    rep stosb
 
     call kernel_main
 
-1:
+hang:
     hlt
-    jmp 1b
-
-.section .data
-.global vbe_mode_ptr
-vbe_mode_ptr:
-    .long 0
+    jmp hang
