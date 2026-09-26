@@ -1515,8 +1515,6 @@ void shell_prompt() {
     print("> ");
 }
 
-static char input_buf[LINE_MAX];
-
 void shell_run() {
     while (1) {
         shell_prompt();
