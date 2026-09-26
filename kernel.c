@@ -1,5 +1,5 @@
 /* ============================================
-   Colibri OS - Ядро v0.8x (FULL)
+   Colibri OS - Ядро x0.8xx (FULL)
    VGA + Shell + FS + Math + Process + Net + Env + Alias + Scroll
    Все команды из help. Подключён utils.h.
    ============================================ */
@@ -164,7 +164,7 @@ void draw_banner() {
     print_color(" | |__| (_) | | | |_) | |  | |\n", LIGHT_CYAN);
     print_color("  \\____\\___/|_|_|_.__/|_|  |_|\n", LIGHT_CYAN);
     print("\n");
-    print_color("       Colibri OS v0.8x\n", LIGHT_GREEN);
+    print_color("       Colibri OS x0.8xx\n", LIGHT_GREEN);
     print("");
     print("Type ");
     print_color("'help'", LIGHT_YELLOW);
@@ -717,7 +717,7 @@ static const char* net_gw   = "10.0.2.2";
    System commands
    ============================================ */
 void cmd_help() {
-    print_color("=== Colibri OS v0.8x - Commands ===\n", LIGHT_CYAN);
+    print_color("=== Colibri OS x0.8xx - Commands ===\n", LIGHT_CYAN);
     print_color("--- System ---\n", LIGHT_YELLOW);
     print("  help          - this help\n");
     print("  ver           - version\n");
@@ -787,7 +787,7 @@ void cmd_help() {
     print("\n");
 }
 
-void cmd_ver() { print("Colibri OS v0.8x (full, with utils)\n"); }
+void cmd_ver() { print("Colibri OS x0.8xx (full, with utils)\n"); }
 
 void cmd_pwd_no_newline() {
     int stack[FS_MAX_OBJECTS];
