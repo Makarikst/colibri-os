@@ -1,7 +1,7 @@
 [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md)
-<h1>Colibri OS</h1>
+<h1>Colibri OS v0.8x</h1>
 
-![版本](https://img.shields.io/badge/version-0.8-blue)
+![版本](https://img.shields.io/badge/version-0.8x-blue)
 ![状态](https://img.shields.io/badge/status-stable-green)
 ![平台](https://img.shields.io/badge/platform-i386-lightgrey)
 ![许可证](https://img.shields.io/badge/license-MIT-yellow)
