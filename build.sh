@@ -17,13 +17,13 @@ echo "=== Kernel ==="
 $GCC -m32 -ffreestanding -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
 
 echo "=== Link ==="
-$LD -m elf_i386 -T linker.ld -o kernel.elf \
+$LD -m elf_i386 -T linker.ld -o colibri.cos \
     --start-group \
     kernel_entry.o kernel.o kmalloc.o utils.o \
     --end-group
 
-echo "kernel.elf:"
-ls -l kernel.elf
+echo "colibri.cos:"
+ls -l colibri.cos
 
 echo "=== Run ==="
-qemu-system-i386 -kernel kernel.elf -net none -vga std
+qemu-system-i386 -kernel colibri.cos -m 16M -net none -vga std
