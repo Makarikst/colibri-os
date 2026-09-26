@@ -24,6 +24,6 @@ $LD -m elf_i386 -T linker.ld -o colibri.cos \
 
 echo "colibri.cos:"
 ls -l colibri.cos
-
+# Run
 echo "=== Run ==="
 qemu-system-i386 -kernel colibri.cos -m 16M -net none -vga std
