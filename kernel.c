@@ -1,11 +1,13 @@
 /* ============================================
-   Colibri OS - Ядро x0.8xx (FULL)
-   VGA + Shell + FS + Math + Process + Net + Env + Alias + Scroll
-   Все команды из help. Подключён utils.h.
+   Colibri OS - Ядро v0.9 (FULL)
+   VGA + Shell + FS + Math + Process + Net + Env + Alias + Scroll + VBE
    ============================================ */
 
 #include "kmalloc.h"
 #include "utils.h"
+#include "framebuffer.h"
+
+extern unsigned int mbi_ptr;
 
 /* ============================================
    VGA
@@ -103,7 +105,6 @@ void scroll_buffer_putchar(char c) {
     scroll_col[sb_line][sb_col] = color;
     sb_col++;
 
-    /* Автоскролл: если пользователь не листал вверх — окно двигается вниз */
     if (sb_line + 1 > scroll_total) {
         scroll_total = sb_line + 1;
         if (scroll_total > SCROLL_LINES) scroll_total = SCROLL_LINES;
@@ -137,10 +138,23 @@ void print_color(const char* str, unsigned char col) {
     color = old;
 }
 
-static void print_dec(unsigned int n) {
+static void print_dec(int n) {
+    char buf[16];
+    int i = 0;
+    int neg = 0;
+    unsigned int u;
+
     if (n == 0) { putchar('0'); return; }
-    char buf[12]; int i = 0;
-    while (n > 0) { buf[i++] = '0' + (n % 10); n /= 10; }
+
+    if (n < 0) { neg = 1; u = (unsigned int)(-(n + 1)) + 1; }
+    else u = (unsigned int)n;
+
+    while (u > 0 && i < 15) {
+        buf[i++] = '0' + (u % 10);
+        u /= 10;
+    }
+
+    if (neg) putchar('-');
     while (i > 0) putchar(buf[--i]);
 }
 
@@ -164,7 +178,7 @@ void draw_banner() {
     print_color(" | |__| (_) | | | |_) | |  | |\n", LIGHT_CYAN);
     print_color("  \\____\\___/|_|_|_.__/|_|  |_|\n", LIGHT_CYAN);
     print("\n");
-    print_color("       Colibri OS x0.8xx\n", LIGHT_GREEN);
+    print_color("       Colibri OS v0.9\n", LIGHT_GREEN);
     print("");
     print("Type ");
     print_color("'help'", LIGHT_YELLOW);
@@ -195,15 +209,15 @@ static int shift_pressed = 0;
 static int ctrl_pressed = 0;
 static int extended = 0;
 
-#define KEY_CTRL_C 3
-#define KEY_CTRL_L 4
-#define KEY_CTRL_D 5
-#define KEY_ESC    27
-#define KEY_UP     (-1)
-#define KEY_DOWN   (-2)
-#define KEY_LEFT   (-3)
-#define KEY_RIGHT  (-4)
-#define KEY_TAB    (-5)
+#define KEY_CTRL_C (-10)
+#define KEY_CTRL_L (-11)
+#define KEY_CTRL_D (-12)
+#define KEY_ESC    (-13)
+#define KEY_UP     (-20)
+#define KEY_DOWN   (-21)
+#define KEY_LEFT   (-22)
+#define KEY_RIGHT  (-23)
+#define KEY_TAB    (-24)
 
 char get_key() {
     while (1) {
@@ -241,40 +255,6 @@ char get_key() {
     }
 }
 
-/*static char try_get_key() {
-    if (!(inb(0x64) & 0x01)) return 0;
-    unsigned char sc = inb(0x60);
-    if (sc == 0xE0) { extended = 1; return 0; }
-    if (sc & 0x80) {
-        unsigned char r = sc & 0x7F;
-        if (r == 0x2A || r == 0x36) shift_pressed = 0;
-        if (r == 0x1D) ctrl_pressed = 0;
-        extended = 0;
-        return 0;
-    }
-    if (extended) {
-        extended = 0;
-        if (sc == 0x48) return KEY_UP;
-        if (sc == 0x50) return KEY_DOWN;
-        if (sc == 0x4B) return KEY_LEFT;
-        if (sc == 0x4D) return KEY_RIGHT;
-        return 0;
-    }
-    if (sc == 0x0F) return KEY_TAB;
-    if (sc == 0x2A || sc == 0x36) { shift_pressed = 1; return 0; }
-    if (sc == 0x1D) { ctrl_pressed = 1; return 0; }
-    if (sc < 128) {
-        char c = shift_pressed ? kbd_upper[sc] : kbd_lower[sc];
-        if (ctrl_pressed) {
-            if (c == 'c' || c == 'C') return KEY_CTRL_C;
-            if (c == 'l' || c == 'L') return KEY_CTRL_L;
-            if (c == 'd' || c == 'D') return KEY_CTRL_D;
-        }
-        return c;
-    }
-    return 0;
-} */
-
 static void handle_scroll_key(char c) {
     if (c == KEY_UP) {
         if (scroll_offset < scroll_total - VIEW_LINES) {
@@ -288,17 +268,6 @@ static void handle_scroll_key(char c) {
         }
     }
 }
-
-//void pause_with_scroll() {
-//    while (1) {
-//        char c = try_get_key();
-//        if (c == KEY_UP || c == KEY_DOWN) {
-//            handle_scroll_key(c);
-//            continue;
-//        }
-//        if (c != 0) return;
-//    }
-//}
 
 /* ============================================
    Env
@@ -554,7 +523,6 @@ void find_recursive(int dir_idx, const char* name, int* found) {
    Calculator
    ============================================ */
 static int calc_parse_primary(const char** p, int* ok);
-static int calc_parse_unary(const char** p, int* ok);
 static int calc_parse_power(const char** p, int* ok);
 static int calc_parse_term(const char** p, int* ok);
 static int calc_parse_expr(const char** p, int* ok);
@@ -710,14 +678,10 @@ static const char* net_mask = "255.255.255.0";
 static const char* net_gw   = "10.0.2.2";
 
 /* ============================================
-   Forward
-   ============================================ */
-
-/* ============================================
    System commands
    ============================================ */
 void cmd_help() {
-    print_color("=== Colibri OS x0.8xx - Commands ===\n", LIGHT_CYAN);
+    print_color("=== Colibri OS v0.9 - Commands ===\n", LIGHT_CYAN);
     print_color("--- System ---\n", LIGHT_YELLOW);
     print("  help          - this help\n");
     print("  ver           - version\n");
@@ -787,7 +751,7 @@ void cmd_help() {
     print("\n");
 }
 
-void cmd_ver() { print("Colibri OS x0.8xx (full, with utils)\n"); }
+void cmd_ver() { print("Colibri OS v0.9 (full, with utils)\n"); }
 
 void cmd_pwd_no_newline() {
     int stack[FS_MAX_OBJECTS];
@@ -801,26 +765,36 @@ void cmd_pwd() { cmd_pwd_no_newline(); putchar('\n'); }
 
 void cmd_date() {
     rtc_time_t t = rtc_get_time();
+
     print_dec(t.day); putchar('.');
-    if (t.mon < 10) putchar('0'); print_dec(t.mon); putchar('.');
+    if (t.mon < 10) putchar('0');
+    print_dec(t.mon); putchar('.');
     print_dec(t.year); putchar(' ');
-    if (t.hour < 10) putchar('0'); print_dec(t.hour); putchar(':');
-    if (t.min < 10) putchar('0'); print_dec(t.min); putchar(':');
-    if (t.sec < 10) putchar('0'); print_dec(t.sec);
+
+    if (t.hour < 10) putchar('0');
+    print_dec(t.hour); putchar(':');
+    if (t.min < 10) putchar('0');
+    print_dec(t.min); putchar(':');
+    if (t.sec < 10) putchar('0');
+    print_dec(t.sec);
     putchar('\n');
 }
 
 void cmd_uptime() {
     rtc_time_t t = rtc_get_time();
-    print("Uptime: current time ");
+
+    print("Current time: ");
+    if (t.hour < 10) putchar('0');
     print_dec(t.hour); putchar(':');
-    if (t.min < 10) putchar('0'); print_dec(t.min); putchar(':');
-    if (t.sec < 10) putchar('0'); print_dec(t.sec);
+    if (t.min < 10) putchar('0');
+    print_dec(t.min); putchar(':');
+    if (t.sec < 10) putchar('0');
+    print_dec(t.sec);
     putchar('\n');
 }
 
 void cmd_mem() {
-    print("Heap start: "); print_hex32(0x100000);
+    print("Heap start: "); print_hex32(0x200000);
     print("\nHeap size:  1048576 bytes\n");
     print("VGA:        text mode 80x25 @ 0xB8000\n");
 }
@@ -911,12 +885,28 @@ void cmd_echo_redirect(const char* text, const char* filename, int append) {
         idx = fs_create_in(parent, last, OBJ_FILE);
         if (idx == -1) { print("Cannot create file\n"); return; }
     }
-    int tlen = strlen(text);
-    int base = append ? fs_objects[idx].size : 0;
-    if (base + tlen > FS_DATA_LEN - 2) tlen = FS_DATA_LEN - 2 - base;
-    strncpy(fs_objects[idx].data + base, text, tlen);
+
+    /* Санити: size и tlen должны быть >= 0 */
+    int size = fs_objects[idx].size;
+    if (size < 0 || size > FS_DATA_LEN) size = 0;
+
+    int tlen = (int)strlen(text);
+    if (tlen < 0) tlen = 0;
+
+    int base = append ? size : 0;
+    if (base < 0) base = 0;
+    if (base > FS_DATA_LEN - 2) base = FS_DATA_LEN - 2;
+
+    int max_copy = FS_DATA_LEN - 2 - base;
+    if (max_copy < 0) max_copy = 0;
+    if (tlen > max_copy) tlen = max_copy;
+
+    if (tlen > 0) {
+        strncpy(fs_objects[idx].data + base, text, tlen);
+    }
     fs_objects[idx].data[base + tlen] = '\n';
     fs_objects[idx].size = base + tlen + 1;
+
     print(append ? "Appended " : "Written ");
     print_dec(tlen + 1); print(" bytes to "); print(filename); putchar('\n');
 }
@@ -1318,7 +1308,6 @@ void shell_execute(char* line) {
         return;
     }
 
-    // Вытаскиваем имя команды ДО tokenize() — чтобы не ломать line
     char cmd_buf[128];
     const char* p = line;
     while (*p == ' ' || *p == '\t') p++;
@@ -1409,7 +1398,7 @@ void shell_execute(char* line) {
     else if (strcmp(cmd, "calc") == 0) {
         if (n < 2) { print("Usage: calc <expr>\n"); }
         else {
-            expr_buf[0] = 0;  // очищаем
+            expr_buf[0] = 0;
             for (int i = 1; i < n; i++) {
                 if (i > 1) strncat(expr_buf, " ", LINE_MAX - strlen(expr_buf) - 1);
                 strncat(expr_buf, tokens[i], LINE_MAX - strlen(expr_buf) - 1);
@@ -1466,62 +1455,7 @@ void shell_execute(char* line) {
 static char input_buf[LINE_MAX];
 static int input_len = 0;
 
-/* Прямой вывод в VGA - обходит print/scroll/putchar */
-static int shell_row = 0;
-static int shell_col = 0;
-
-static void shell_puts(const char* s) {
-    volatile unsigned char* vga = (unsigned char*) 0xB8000;
-    while (*s) {
-        if (*s == '\n') {
-            shell_row++;
-            shell_col = 0;
-        } else {
-            if (shell_col >= 80) { shell_col = 0; shell_row++; }
-            int off = (shell_row * 80 + shell_col) * 2;
-            vga[off] = *s;
-            vga[off + 1] = 0x0F;
-            shell_col++;
-        }
-        s++;
-    }
-}
-
-static void shell_putchar(char c) {
-    volatile unsigned char* vga = (unsigned char*) 0xB8000;
-    if (c == '\n') {
-        shell_row++;
-        shell_col = 0;
-    } else if (c == '\b') {
-        if (shell_col > 0) {
-            shell_col--;
-            int off = (shell_row * 80 + shell_col) * 2;
-            vga[off] = ' ';
-            vga[off + 1] = 0x0F;
-        }
-    } else {
-        if (shell_col >= 80) { shell_col = 0; shell_row++; }
-        int off = (shell_row * 80 + shell_col) * 2;
-        vga[off] = c;
-        vga[off + 1] = 0x0F;
-        shell_col++;
-    }
-    /* скролл */
-    if (shell_row >= 25) {
-        for (int i = 0; i < 24 * 80; i++) {
-            vga[i * 2]     = vga[(i + 80) * 2];
-            vga[i * 2 + 1] = vga[(i + 80) * 2 + 1];
-        }
-        for (int i = 0; i < 80; i++) {
-            vga[(24 * 80 + i) * 2]     = ' ';
-            vga[(24 * 80 + i) * 2 + 1] = 0x0F;
-        }
-        shell_row = 24;
-    }
-}
-
 void shell_prompt() {
-    /* Перед выводом приглашения гарантируем, что строка попадёт в окно */
     if (sb_line >= SCROLL_LINES) sb_line = SCROLL_LINES - 1;
     if (sb_line + 1 > scroll_total) {
         scroll_total = sb_line + 1;
@@ -1578,6 +1512,33 @@ void shell_run() {
 void kernel_main() {
     clear_screen();
     draw_banner();
+
+    /* ОТЛАДКА: показываем mbi_ptr и flags */
+    volatile unsigned char* vga = (unsigned char*) 0xB8000;
+    const char* hex = "0123456789abcdef";
+
+    /* mbi_ptr на строке 12 */
+    unsigned int p = mbi_ptr;
+    vga[80*12*2 + 0] = 'P'; vga[80*12*2 + 1] = 0x0E;
+    vga[80*12*2 + 2] = ':'; vga[80*12*2 + 3] = 0x0E;
+    for (int i = 0; i < 8; i++) {
+        vga[80*12*2 + 4 + i*2] = hex[(p >> (28 - i*4)) & 0xF];
+        vga[80*12*2 + 5 + i*2] = 0x0E;
+    }
+
+    if (mbi_ptr != 0) {
+        unsigned int* mbi = (unsigned int*) mbi_ptr;
+        unsigned int flags = mbi[0];
+
+        /* flags на строке 13 */
+        vga[80*13*2 + 0] = 'F'; vga[80*13*2 + 1] = 0x0E;
+        vga[80*13*2 + 2] = ':'; vga[80*13*2 + 3] = 0x0E;
+        for (int i = 0; i < 8; i++) {
+            vga[80*13*2 + 4 + i*2] = hex[(flags >> (28 - i*4)) & 0xF];
+            vga[80*13*2 + 5 + i*2] = 0x0E;
+        }
+    }
+
     heap_init();
     fs_init();
     proc_init();

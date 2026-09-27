@@ -247,18 +247,31 @@ static int bcd_to_bin(uint8_t bcd) {
 }
 
 static uint8_t rtc_read(uint8_t reg) {
-    outb(0x70, reg);
+    outb(0x70, 0x80 | reg);
     return inb(0x71);
 }
 
 rtc_time_t rtc_get_time() {
     rtc_time_t t;
+
+    /* Ждём окончания обновления RTC */
+    while (rtc_read(0x0A) & 0x80) { }
+
     t.sec  = bcd_to_bin(rtc_read(0x00));
     t.min  = bcd_to_bin(rtc_read(0x02));
     t.hour = bcd_to_bin(rtc_read(0x04));
     t.day  = bcd_to_bin(rtc_read(0x07));
     t.mon  = bcd_to_bin(rtc_read(0x08));
     t.year = 2000 + bcd_to_bin(rtc_read(0x09));
+
+    /* Санити-чек: если мусор — дефолт */
+    if (t.sec  > 59) t.sec  = 0;
+    if (t.min  > 59) t.min  = 0;
+    if (t.hour > 23) t.hour = 0;
+    if (t.day  < 1 || t.day > 31) t.day = 1;
+    if (t.mon  < 1 || t.mon > 12) t.mon = 1;
+    if (t.year < 2000 || t.year > 2100) t.year = 2026;
+
     return t;
 }
 
@@ -294,6 +307,16 @@ void outb(uint16_t port, uint8_t val) {
 uint8_t inb(uint16_t port) {
     uint8_t ret;
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
+}
+
+void outl(uint16_t port, uint32_t val) {
+    __asm__ volatile ("outl %0, %1" : : "a"(val), "Nd"(port));
+}
+
+uint32_t inl(uint16_t port) {
+    uint32_t ret;
+    __asm__ volatile ("inl %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
 

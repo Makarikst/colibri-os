@@ -57,8 +57,11 @@ rtc_time_t rtc_get_time(void);
 uint32_t   rtc_get_unix(void);
 
 /* ---------- Клавиатура / ввод-вывод ---------- */
+/* ---------- Клавиатура / ввод-вывод ---------- */
 void     outb(uint16_t port, uint8_t val);
 uint8_t  inb(uint16_t port);
+void     outl(uint16_t port, uint32_t val);
+uint32_t inl(uint16_t port);
 
 /* ---------- Псевдографика ---------- */
 void draw_box(int x, int y, int w, int h);

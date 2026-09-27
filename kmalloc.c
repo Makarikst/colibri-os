@@ -101,25 +101,19 @@ static void print_hex(unsigned int n) {
 }
 
 static void print_dec(unsigned int n) {
-    if (n == 0) {
-        putchar('0');
-        return;
-    }
-    char buf[12];
+    if (n == 0) { putchar('0'); return; }
+    char buf[16];
     int i = 0;
-    while (n > 0) {
-        buf[i++] = '0' + (n % 10);
-        n /= 10;
-    }
+    while (n > 0 && i < 15) { buf[i++] = '0' + (n % 10); n /= 10; }
     while (i > 0) putchar(buf[--i]);
 }
 
 void heap_stats() {
     print("Heap start: ");
-    print_hex((unsigned int)heap_start);
+    print_hex((unsigned int)heap_start);   /* ← если heap_start = NULL → print_hex(0) — ок */
     print("\nHeap size:  ");
-    print_dec(HEAP_SIZE);
+    print_dec(HEAP_SIZE);                   /* ← 1048576 — ок */
     print(" bytes\nHeap used:  ");
-    print_dec((unsigned int)heap_used);
+    print_dec((unsigned int)heap_used);    /* ← если heap_used — мусор, print_dec пишет 10 цифр */
     print(" bytes\n");
 }
