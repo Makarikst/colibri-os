@@ -1,12 +1,14 @@
 #ifndef FRAMEBUFFER_H
 #define FRAMEBUFFER_H
 
+#include "utils.h"   /* ← ЭТА СТРОКА */
 
 typedef struct {
     uint32_t addr;
     uint32_t width;
     uint32_t height;
     uint32_t pitch;
+    uint8_t  bpp;
 } FB_Info;
 
 extern FB_Info fb_info;

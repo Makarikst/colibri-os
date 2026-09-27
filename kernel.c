@@ -33,6 +33,7 @@ static unsigned char color = (BLACK << 4) | WHITE;
 #define SCROLL_LINES 500
 #define SCROLL_COLS  80
 #define VIEW_LINES   25
+#define FS_MAX_FILES 5000
 
 static unsigned char scroll_buf[SCROLL_LINES][SCROLL_COLS];
 static unsigned char scroll_col[SCROLL_LINES][SCROLL_COLS];
@@ -213,6 +214,8 @@ static int extended = 0;
 #define KEY_CTRL_L (-11)
 #define KEY_CTRL_D (-12)
 #define KEY_ESC    (-13)
+#define KEY_CTRL_Q (-14)
+#define KEY_CTRL_S (-15)
 #define KEY_UP     (-20)
 #define KEY_DOWN   (-21)
 #define KEY_LEFT   (-22)
@@ -248,6 +251,8 @@ char get_key() {
                     if (c == 'c' || c == 'C') return KEY_CTRL_C;
                     if (c == 'l' || c == 'L') return KEY_CTRL_L;
                     if (c == 'd' || c == 'D') return KEY_CTRL_D;
+                    if (c == 'q' || c == 'Q') return KEY_CTRL_Q;
+                    if (c == 's' || c == 'S') return KEY_CTRL_S;
                 }
                 if (c) return c;
             }
@@ -670,6 +675,371 @@ int proc_kill(int pid) {
 }
 
 /* ============================================
+   .cpe — Python-подобный интерпретатор
+   ============================================ */
+
+#define CPE_MAX_VARS 32
+#define CPE_VAR_NAME 32
+#define CPE_VAR_VAL  256
+
+typedef struct {
+    char name[CPE_VAR_NAME];
+    char value[CPE_VAR_VAL];
+    int  is_string;
+    int  is_number;
+    int  number;
+} CpeVar;
+
+static CpeVar cpe_vars[CPE_MAX_VARS];
+static int    cpe_var_count = 0;
+
+void cpe_vars_reset() {
+    cpe_var_count = 0;
+    for (int i = 0; i < CPE_MAX_VARS; i++) {
+        cpe_vars[i].name[0] = 0;
+        cpe_vars[i].value[0] = 0;
+        cpe_vars[i].is_string = 0;
+        cpe_vars[i].is_number = 0;
+        cpe_vars[i].number = 0;
+    }
+}
+
+CpeVar* cpe_find_var(const char* name) {
+    for (int i = 0; i < cpe_var_count; i++) {
+        if (strcmp(cpe_vars[i].name, name) == 0) return &cpe_vars[i];
+    }
+    return 0;
+}
+
+void cpe_set_var(const char* name, const char* value, int is_string, int is_number, int number) {
+    CpeVar* v = cpe_find_var(name);
+    if (!v) {
+        if (cpe_var_count >= CPE_MAX_VARS) return;
+        v = &cpe_vars[cpe_var_count++];
+        strcpy(v->name, name);
+    }
+    strcpy(v->value, value);
+    v->is_string = is_string;
+    v->is_number = is_number;
+    v->number = number;
+}
+
+const char* cpe_skip_ws(const char* p) {
+    while (*p == ' ' || *p == '\t') p++;
+    return p;
+}
+
+const char* cpe_read_string(const char* p, char* out) {
+    p = cpe_skip_ws(p);
+    if (*p != '"') return 0;
+    p++;
+    int i = 0;
+    while (*p && *p != '"' && i < CPE_VAR_VAL - 1) out[i++] = *p++;
+    out[i] = 0;
+    if (*p == '"') p++;
+    return p;
+}
+
+const char* cpe_read_token(const char* p, char* out) {
+    p = cpe_skip_ws(p);
+    int i = 0;
+    while (*p && *p != ' ' && *p != '\t' && *p != '\n' &&
+           *p != '(' && *p != ')' && *p != '=' && *p != '"' &&
+           *p != '+' && *p != '-' && *p != '*' && *p != '/' &&
+           *p != ',' && i < CPE_VAR_VAL - 1) {
+        out[i++] = *p++;
+    }
+    out[i] = 0;
+    return p;
+}
+
+int cpe_parse_int(const char* s, int* out) {
+    int sign = 1;
+    int i = 0;
+    if (s[0] == '-') { sign = -1; i = 1; }
+    if (s[i] == 0) return 0;
+    int n = 0;
+    while (s[i]) {
+        if (s[i] < '0' || s[i] > '9') return 0;
+        n = n * 10 + (s[i] - '0');
+        i++;
+    }
+    *out = n * sign;
+    return 1;
+}
+
+int cpe_get_number(const char* token, int* out) {
+    int n;
+    if (cpe_parse_int(token, &n)) { *out = n; return 1; }
+    CpeVar* v = cpe_find_var(token);
+    if (v && v->is_number) { *out = v->number; return 1; }
+    return 0;
+}
+
+int cpe_eval_expr(const char* expr, int* out) {
+    const char* p = expr;
+    int have_left = 0;
+    int result = 0;
+    int op = 0;
+
+    while (*p) {
+        p = cpe_skip_ws(p);
+        if (*p == 0) break;
+
+        if (*p == '+' || *p == '-' || *p == '*' || *p == '/') {
+            op = (*p == '+') ? 1 : (*p == '-') ? 2 : (*p == '*') ? 3 : 4;
+            p++;
+            continue;
+        }
+
+        char token[CPE_VAR_VAL];
+        p = cpe_read_token(p, token);
+        if (token[0] == 0) break;
+
+        int val;
+        if (!cpe_get_number(token, &val)) return 0;
+
+        if (!have_left) { result = val; have_left = 1; }
+        else {
+            if (op == 1) result += val;
+            else if (op == 2) result -= val;
+            else if (op == 3) result *= val;
+            else if (op == 4) { if (val != 0) result /= val; }
+            op = 0;
+        }
+    }
+    if (!have_left) return 0;
+    *out = result;
+    return 1;
+}
+
+static char cpe_input_buffer[CPE_VAR_VAL];
+
+const char* cpe_input(const char* prompt) {
+    print(prompt);
+    int i = 0;
+    while (1) {
+        char c = get_key();
+        if (c == '\n') {
+            cpe_input_buffer[i] = 0;
+            putchar('\n');
+            return cpe_input_buffer;
+        }
+        if (c == '\b') {
+            if (i > 0) { i--; putchar('\b'); }
+            continue;
+        }
+        if (i < CPE_VAR_VAL - 1) {
+            cpe_input_buffer[i++] = c;
+            putchar(c);
+        }
+    }
+}
+
+void cpe_exec_line(const char* line) {
+    const char* p = cpe_skip_ws(line);
+    if (*p == 0 || *p == '#') return;
+
+    /* print(...) */
+    if (strncmp(p, "print", 5) == 0) {
+        p = cpe_skip_ws(p + 5);
+        if (*p == '(') {
+            p++;
+            p = cpe_skip_ws(p);
+
+            if (*p == '"') {
+                char buf[CPE_VAR_VAL];
+                p = cpe_read_string(p, buf);
+                print(buf);
+                putchar('\n');
+                return;
+            }
+
+            if (strncmp(p, "math.", 5) == 0) {
+                p += 5;
+                char fn[16];
+                int i = 0;
+                while (*p && *p != '(' && i < 15) fn[i++] = *p++;
+                fn[i] = 0;
+                p = cpe_skip_ws(p);
+                if (*p == '(') p++;
+
+                char arg1[CPE_VAR_VAL], arg2[CPE_VAR_VAL];
+                int a1 = 0, a2 = 0;
+
+                p = cpe_read_token(p, arg1);
+                cpe_get_number(arg1, &a1);
+
+                p = cpe_skip_ws(p);
+                if (*p == ',') {
+                    p++;
+                    p = cpe_read_token(p, arg2);
+                    cpe_get_number(arg2, &a2);
+                }
+
+                if (strcmp(fn, "sqrt") == 0) {
+                    int r = 0;
+                    for (int k = 1; k * k <= a1; k++) r = k;
+                    print_dec(r);
+                } else if (strcmp(fn, "abs") == 0) {
+                    print_dec(a1 < 0 ? -a1 : a1);
+                } else if (strcmp(fn, "min") == 0) {
+                    print_dec(a1 < a2 ? a1 : a2);
+                } else if (strcmp(fn, "max") == 0) {
+                    print_dec(a1 > a2 ? a1 : a2);
+                }
+                putchar('\n');
+                return;
+            }
+
+            char token[CPE_VAR_VAL];
+            p = cpe_read_token(p, token);
+            if (token[0]) {
+                CpeVar* v = cpe_find_var(token);
+                if (v) {
+                    if (v->is_number) print_dec(v->number);
+                    else print(v->value);
+                    putchar('\n');
+                } else {
+                    print(token);
+                    putchar('\n');
+                }
+            }
+            return;
+        }
+    }
+
+    /* input(...) */
+    if (strncmp(p, "input", 5) == 0) {
+        p = cpe_skip_ws(p + 5);
+        if (*p == '(') {
+            p++;
+            p = cpe_skip_ws(p);
+            char prompt[CPE_VAR_VAL];
+            if (*p == '"') {
+                p = cpe_read_string(p, prompt);
+                const char* result = cpe_input(prompt);
+                cpe_set_var("_", result, 1, 0, 0);
+            }
+            return;
+        }
+    }
+
+    /* Присваивание */
+    char name[CPE_VAR_NAME];
+    const char* q = cpe_read_token(p, name);
+    q = cpe_skip_ws(q);
+    if (*q == '=') {
+        q++;
+        q = cpe_skip_ws(q);
+
+        if (*q == '"') {
+            char buf[CPE_VAR_VAL];
+            q = cpe_read_string(q, buf);
+            cpe_set_var(name, buf, 1, 0, 0);
+        } else if (strncmp(q, "input", 5) == 0) {
+            q = cpe_skip_ws(q + 5);
+            if (*q == '(') {
+                q++;
+                q = cpe_skip_ws(q);
+                char prompt[CPE_VAR_VAL];
+                if (*q == '"') {
+                    q = cpe_read_string(q, prompt);
+                    const char* result = cpe_input(prompt);
+                    cpe_set_var(name, result, 1, 0, 0);
+                }
+            }
+        } else {
+            int num;
+            if (cpe_eval_expr(q, &num)) {
+                char buf[16];
+                int i = 0;
+                if (num == 0) buf[i++] = '0';
+                else {
+                    char tmp[16]; int ti = 0;
+                    int n = num < 0 ? -num : num;
+                    while (n > 0) { tmp[ti++] = '0' + (n % 10); n /= 10; }
+                    if (num < 0) buf[i++] = '-';
+                    while (ti > 0) buf[i++] = tmp[--ti];
+                }
+                buf[i] = 0;
+                cpe_set_var(name, buf, 0, 1, num);
+            } else {
+                char buf[CPE_VAR_VAL];
+                q = cpe_read_token(q, buf);
+                cpe_set_var(name, buf, 0, 0, 0);
+            }
+        }
+    }
+}
+
+void cpe_run(const char* filename) {
+    int parent; char last[FS_NAME_LEN];
+    if (!split_path(filename, current_dir, &parent, last)) {
+        print("cpe: invalid name\n");
+        return;
+    }
+    int idx = fs_find_in(parent, last);
+    if (idx == -1 || fs_objects[idx].type != OBJ_FILE) {
+        print_color("cpe: file not found: ", LIGHT_RED);
+        print(filename);
+        putchar('\n');
+        return;
+    }
+
+    cpe_vars_reset();
+
+    char line[256];
+    int line_len = 0;
+
+    for (int i = 0; i < fs_objects[idx].size; i++) {
+        char c = fs_objects[idx].data[i];
+        if (c == '\n' || line_len >= 255) {
+            line[line_len] = 0;
+            cpe_exec_line(line);
+            line_len = 0;
+        } else {
+            line[line_len++] = c;
+        }
+    }
+    if (line_len > 0) {
+        line[line_len] = 0;
+        cpe_exec_line(line);
+    }
+}
+
+/* ---------- .cai (заглушка) ---------- */
+void cai_run(const char* filename) {
+    print_color("cai: ", LIGHT_YELLOW);
+    print(filename);
+    putchar('\n');
+    print("CAI runtime will be implemented in v1.0.\n");
+}
+
+/* ---------- Shell ---------- */
+static char cmd_buffer[128];
+
+void shell_read_line() {
+    int i = 0;
+    while (1) {
+        char c = get_key();
+        if (c == '\n') {
+            cmd_buffer[i] = 0;
+            putchar('\n');
+            return;
+        }
+        if (c == '\b') {
+            if (i > 0) { i--; putchar('\b'); }
+            continue;
+        }
+        if (i < 127) {
+            cmd_buffer[i++] = c;
+            putchar(c);
+        }
+    }
+}
+
+/* ============================================
    Net (stub)
    ============================================ */
 static int net_up = 0;
@@ -695,6 +1065,9 @@ void cmd_help() {
     print("  color <n>     - text color (0-15)\n");
     print("  reboot        - restart\n");
     print("  shutdown      - halt CPU\n");
+    print_color("--- Executable ---\n", LIGHT_YELLOW);
+    print("  cpe X         - CPE run X\n");
+    print("  run X         - Run app (v1.0) X\n");
     print_color("--- Files ---\n", LIGHT_YELLOW);
     print("  ls [path]     - list dir\n");
     print("  pwd           - current dir\n");
@@ -750,6 +1123,87 @@ void cmd_help() {
     print("  unalias X     - remove alias\n");
     print("\n");
 }
+
+static char nano_buffer[FS_DATA_LEN];
+static int  nano_size = 0;
+void nano_open(const char* filename) {
+    int parent; char last[FS_NAME_LEN];
+    if (!split_path(filename, current_dir, &parent, last)) {
+        print("nano: invalid name\n");
+        return;
+    }
+
+    int idx = fs_find_in(parent, last);
+    if (idx == -1) {
+        print("nano: file not found: ");
+        print(filename);
+        putchar('\n');
+        print("Use 'touch ");
+        print(filename);
+        print("' first.\n");
+        return;
+    }
+    if (fs_objects[idx].type != OBJ_FILE) {
+        print("nano: not a file\n");
+        return;
+    }
+
+    int sz = fs_objects[idx].size;
+    if (sz > FS_DATA_LEN - 1) sz = FS_DATA_LEN - 1;
+    for (int i = 0; i < sz; i++) nano_buffer[i] = fs_objects[idx].data[i];
+    nano_buffer[sz] = 0;
+    nano_size = sz;
+
+    clear_screen();
+    print_color("nano: ", LIGHT_CYAN);
+    print(filename);
+    print("\n");
+    print("(Ctrl+S = save, Ctrl+Q = quit)\n");
+    print("--------------------------------\n");
+    print(nano_buffer);
+
+    int pos = nano_size;
+
+    while (1) {
+        char c = get_key();
+
+        if (c == KEY_CTRL_Q || c == KEY_ESC) {
+            clear_screen();
+            return;
+        }
+        if (c == KEY_CTRL_S) {
+            fs_objects[idx].size = pos;
+            for (int i = 0; i < pos; i++) fs_objects[idx].data[i] = nano_buffer[i];
+            fs_objects[idx].data[pos] = 0;
+            print_color("\n[saved ", LIGHT_GREEN);
+            print_dec(pos);
+            print_color(" bytes]\n", LIGHT_GREEN);
+            continue;
+        }
+        if (c == '\n') {
+            if (pos < FS_DATA_LEN - 1) {
+                nano_buffer[pos++] = '\n';
+                nano_buffer[pos] = 0;
+                putchar('\n');
+            }
+            continue;
+        }
+        if (c == '\b') {
+            if (pos > 0) {
+                pos--;
+                nano_buffer[pos] = 0;
+                putchar('\b');
+            }
+            continue;
+        }
+        if (pos < FS_DATA_LEN - 1) {
+            nano_buffer[pos++] = c;
+            nano_buffer[pos] = 0;
+            putchar(c);
+        }
+    }
+}
+
 
 void cmd_ver() { print("Colibri OS v0.9 (full, with utils)\n"); }
 
@@ -1337,6 +1791,7 @@ void shell_execute(char* line) {
     }
 
     /* System */
+
     if (strcmp(cmd, "help") == 0) cmd_help();
     else if (strcmp(cmd, "ver") == 0) cmd_ver();
     else if (strcmp(cmd, "banner") == 0) draw_banner();
@@ -1393,6 +1848,9 @@ void shell_execute(char* line) {
     else if (strcmp(cmd, "grep") == 0) { if (n > 2) cmd_grep(tokens[1], tokens[2]); else print("Usage: grep <pat> <file>\n"); }
     else if (strcmp(cmd, "sort") == 0) { if (n > 1) cmd_sort(tokens[1]); else print("Usage: sort <file>\n"); }
     else if (strcmp(cmd, "hexdump") == 0) { if (n > 1) cmd_hexdump(tokens[1]); else print("Usage: hexdump <file>\n"); }
+    else if (strcmp(cmd, "nano") == 0) { if (n > 1) nano_open(tokens[1]); else print("Usage: nano <file>\n"); }
+    else if (strcmp(cmd, "cpe") == 0)  { if (n > 1) cpe_run(tokens[1]);  else print("Usage: cpe <file.cpe>\n"); }
+    else if (strcmp(cmd, "run") == 0)  { if (n > 1) cai_run(tokens[1]);  else print("Usage: run <file.cai>\n"); }
 
     /* Math */
     else if (strcmp(cmd, "calc") == 0) {

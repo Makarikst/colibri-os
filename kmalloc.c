@@ -6,7 +6,7 @@
 #include "kmalloc.h"
 
 /* Начало и конец кучи в памяти */
-#define HEAP_START  0x200000    /* 1 МБ */
+#define HEAP_START  0x400000    /* 1 МБ */
 #define HEAP_SIZE   0x100000    /* 1 МБ (до 2 МБ) */
 #define HEAP_END    (HEAP_START + HEAP_SIZE)
 
