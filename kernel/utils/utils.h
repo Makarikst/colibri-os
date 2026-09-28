@@ -1,13 +1,13 @@
-/* ============================================
-   Colibri OS — утилиты (utils.h)
-   ============================================ */
-
 #ifndef UTILS_H
 #define UTILS_H
 
-typedef unsigned char  uint8_t;
-typedef unsigned short uint16_t;
-typedef unsigned int   uint32_t;
+/* ============================================
+   Утилиты Colibri OS
+   ============================================ */
+
+typedef unsigned char      uint8_t;
+typedef unsigned short     uint16_t;
+typedef unsigned int       uint32_t;
 typedef unsigned long long uint64_t;
 
 /* ---------- Память ---------- */
@@ -56,24 +56,18 @@ typedef struct {
 rtc_time_t rtc_get_time(void);
 uint32_t   rtc_get_unix(void);
 
-/* ---------- Клавиатура / ввод-вывод ---------- */
-/* ---------- Клавиатура / ввод-вывод ---------- */
+/* ---------- Порты ---------- */
 void     outb(uint16_t port, uint8_t val);
 uint8_t  inb(uint16_t port);
 void     outl(uint16_t port, uint32_t val);
 uint32_t inl(uint16_t port);
-
-/* ---------- Псевдографика ---------- */
-void draw_box(int x, int y, int w, int h);
-void draw_hline(int x, int y, int len, char ch);
-void draw_vline(int x, int y, int len, char ch);
 
 /* ---------- Логи / ошибки ---------- */
 void klog(const char* level, const char* msg);
 void kpanic(const char* msg);
 void dump_hex(const void* data, uint32_t n);
 
-/* ---------- Генератор случайных чисел ---------- */
+/* ---------- RNG ---------- */
 void     srand(uint32_t seed);
 uint32_t rand_u32(void);
 int      rand_range(int lo, int hi);

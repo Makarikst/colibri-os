@@ -1,17 +1,4 @@
-/* ============================================
-   Colibri OS — утилиты (utils.c)
-   ============================================ */
-
 #include "utils.h"
-
-/* Внешние функции ядра (VGA, RTC) */
-extern void print(const char* str);
-extern void putchar(char c);
-extern void print_color(const char* str, unsigned char col);
-
-#define LIGHT_RED    12
-#define LIGHT_YELLOW 14
-#define WHITE        15
 
 /* ============================================
    Память
@@ -247,14 +234,13 @@ static int bcd_to_bin(uint8_t bcd) {
 }
 
 static uint8_t rtc_read(uint8_t reg) {
-    outb(0x70, 0x80 | reg);
+    outb(0x70, 0x80 | reg);   /* NMI off */
     return inb(0x71);
 }
 
-rtc_time_t rtc_get_time() {
+rtc_time_t rtc_get_time(void) {
     rtc_time_t t;
 
-    /* Ждём окончания обновления RTC */
     while (rtc_read(0x0A) & 0x80) { }
 
     t.sec  = bcd_to_bin(rtc_read(0x00));
@@ -264,7 +250,7 @@ rtc_time_t rtc_get_time() {
     t.mon  = bcd_to_bin(rtc_read(0x08));
     t.year = 2000 + bcd_to_bin(rtc_read(0x09));
 
-    /* Санити-чек: если мусор — дефолт */
+    /* Санити-чек */
     if (t.sec  > 59) t.sec  = 0;
     if (t.min  > 59) t.min  = 0;
     if (t.hour > 23) t.hour = 0;
@@ -275,16 +261,11 @@ rtc_time_t rtc_get_time() {
     return t;
 }
 
-uint32_t rtc_get_unix() {
+uint32_t rtc_get_unix(void) {
     rtc_time_t t = rtc_get_time();
-    /* Защита от мусора в RTC */
     if (t.year < 2000 || t.year > 2100) return 0;
     if (t.mon < 1 || t.mon > 12) return 0;
     if (t.day < 1 || t.day > 31) return 0;
-    if (t.hour > 23) return 0;
-    if (t.min > 59) return 0;
-    if (t.sec > 59) return 0;
-
     uint32_t days = 0;
     for (int y = 2000; y < t.year; y++)
         days += ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)) ? 366 : 365;
@@ -321,55 +302,22 @@ uint32_t inl(uint16_t port) {
 }
 
 /* ============================================
-   Псевдографика (через внешние print/putchar)
-   ============================================ */
-void draw_hline(int x, int y, int len, char ch) {
-    /* Не имеем прямого доступа к VGA — пропускаем.
-       Реализация — через putchar_at, если понадобится. */
-    (void)x; (void)y; (void)len; (void)ch;
-}
-
-void draw_vline(int x, int y, int len, char ch) {
-    (void)x; (void)y; (void)len; (void)ch;
-}
-
-void draw_box(int x, int y, int w, int h) {
-    (void)x; (void)y; (void)w; (void)h;
-}
-
-/* ============================================
    Логи
    ============================================ */
 void klog(const char* level, const char* msg) {
-    print("[");
-    if (strcmp(level, "INFO") == 0)      print_color("INFO", 10);
-    else if (strcmp(level, "WARN") == 0) print_color("WARN", LIGHT_YELLOW);
-    else if (strcmp(level, "ERR") == 0)  print_color("ERR", LIGHT_RED);
-    else print(level);
-    print("] ");
-    print(msg);
-    putchar('\n');
+    /* заглушка — можешь реализовать позже */
+    (void)level; (void)msg;
 }
 
 void kpanic(const char* msg) {
-    print_color("\n*** KPANIC ***\n", LIGHT_RED);
-    print_color(msg, LIGHT_RED);
-    putchar('\n');
+    (void)msg;
     cpu_cli();
     while (1) cpu_halt();
 }
 
 void dump_hex(const void* data, uint32_t n) {
-    const uint8_t* p = (const uint8_t*) data;
-    char buf[4];
-    for (uint32_t i = 0; i < n; i++) {
-        itoa(p[i], buf, 16);
-        if (p[i] < 16) putchar('0');
-        print(buf);
-        putchar(' ');
-        if ((i + 1) % 16 == 0) putchar('\n');
-    }
-    putchar('\n');
+    /* заглушка — реализуешь позже */
+    (void)data; (void)n;
 }
 
 /* ============================================
@@ -379,7 +327,7 @@ static uint32_t rng_state = 0;
 
 void srand(uint32_t seed) { rng_state = seed ? seed : 1; }
 
-uint32_t rand_u32() {
+uint32_t rand_u32(void) {
     rng_state = rng_state * 1103515245u + 12345u;
     return (rng_state >> 16) & 0x7FFF;
 }
@@ -392,6 +340,6 @@ int rand_range(int lo, int hi) {
 /* ============================================
    CPU
    ============================================ */
-void cpu_halt() { __asm__ volatile ("hlt"); }
-void cpu_cli()  { __asm__ volatile ("cli"); }
-void cpu_sti()  { __asm__ volatile ("sti"); }
+void cpu_halt(void) { __asm__ volatile ("hlt"); }
+void cpu_cli(void)  { __asm__ volatile ("cli"); }
+void cpu_sti(void)  { __asm__ volatile ("sti"); }

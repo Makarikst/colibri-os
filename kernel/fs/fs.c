@@ -1,0 +1,199 @@
+#include "fs.h"
+#include "../vga/vga.h"
+
+/* ============================================
+   Состояние
+   ============================================ */
+static FsObject fs_objects[FS_MAX_OBJECTS];
+static int current_dir = ROOT_INDEX;
+
+/* ============================================
+   Доступ
+   ============================================ */
+FsObject* fs_get(int idx) {
+    if (idx < 0 || idx >= FS_MAX_OBJECTS) return 0;
+    return &fs_objects[idx];
+}
+
+int fs_get_current_dir(void) { return current_dir; }
+void fs_set_current_dir(int idx) { current_dir = idx; }
+
+/* ============================================
+   Поиск
+   ============================================ */
+int fs_find_in(int parent, const char* name) {
+    for (int i = 0; i < FS_MAX_OBJECTS; i++)
+        if (fs_objects[i].type != OBJ_FREE && fs_objects[i].parent == parent &&
+            strcmp(fs_objects[i].name, name) == 0) return i;
+    return -1;
+}
+
+/* ============================================
+   Инициализация
+   ============================================ */
+void fs_init(void) {
+    for (int i = 0; i < FS_MAX_OBJECTS; i++) {
+        fs_objects[i].type = OBJ_FREE;
+        fs_objects[i].name[0] = 0;
+        fs_objects[i].parent = -1;
+        fs_objects[i].size = 0;
+        fs_objects[i].data[0] = 0;
+    }
+    fs_objects[ROOT_INDEX].type = OBJ_DIR;
+    strcpy(fs_objects[ROOT_INDEX].name, "/");
+    fs_objects[ROOT_INDEX].parent = -1;
+
+    int c = 1; strcpy(fs_objects[c].name, "colibri"); fs_objects[c].type = OBJ_DIR; fs_objects[c].parent = ROOT_INDEX;
+    int u = 2; strcpy(fs_objects[u].name, "users");   fs_objects[u].type = OBJ_DIR; fs_objects[u].parent = c;
+    int a = 3; strcpy(fs_objects[a].name, "alpha");   fs_objects[a].type = OBJ_DIR; fs_objects[a].parent = u;
+    int s = 4; strcpy(fs_objects[s].name, "system");  fs_objects[s].type = OBJ_DIR; fs_objects[s].parent = c;
+
+    current_dir = a;
+}
+
+/* ============================================
+   Создание
+   ============================================ */
+int fs_create_in(int parent_idx, const char* name, int type) {
+    if (fs_find_in(parent_idx, name) != -1) return -1;
+    for (int i = 0; i < FS_MAX_OBJECTS; i++) {
+        if (fs_objects[i].type == OBJ_FREE) {
+            strncpy(fs_objects[i].name, name, FS_NAME_LEN - 1);
+            fs_objects[i].type = type;
+            fs_objects[i].parent = parent_idx;
+            fs_objects[i].size = 0;
+            fs_objects[i].data[0] = 0;
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* ============================================
+   Удаление
+   ============================================ */
+void fs_delete_by_index(int idx) {
+    if (idx == ROOT_INDEX) return;
+    if (fs_objects[idx].type == OBJ_DIR)
+        for (int i = 0; i < FS_MAX_OBJECTS; i++)
+            if (fs_objects[i].type != OBJ_FREE && fs_objects[i].parent == idx)
+                fs_delete_by_index(i);
+    fs_objects[idx].type = OBJ_FREE;
+    fs_objects[idx].name[0] = 0;
+    fs_objects[idx].parent = -1;
+}
+
+/* ============================================
+   Пути
+   ============================================ */
+void strip_quotes(const char* in, char* out) {
+    int i = 0, j = 0;
+    while (in[i] == ' ' || in[i] == '\t') i++;
+    if (in[i] == '"') {
+        i++;
+        while (in[i] && in[i] != '"' && j < 255) out[j++] = in[i++];
+    } else {
+        while (in[i] && in[i] != ' ' && in[i] != '\t' && j < 255) out[j++] = in[i++];
+    }
+    out[j] = 0;
+}
+
+int parse_path(const char* path, int start_idx) {
+    char clean[256];
+    strip_quotes(path, clean);
+    int cur;
+    const char* p = clean;
+    if (clean[0] == '/') { cur = ROOT_INDEX; p = clean + 1; }
+    else cur = start_idx;
+    if (*p == 0) return cur;
+    char part[FS_NAME_LEN];
+    int pi = 0;
+    while (1) {
+        if (*p == '/' || *p == 0) {
+            part[pi] = 0;
+            if (pi > 0) {
+                if (strcmp(part, ".") == 0) { }
+                else if (strcmp(part, "..") == 0) { if (cur != ROOT_INDEX) cur = fs_objects[cur].parent; }
+                else { int idx = fs_find_in(cur, part); if (idx == -1) return -1; cur = idx; }
+            }
+            if (*p == 0) break;
+            pi = 0; p++;
+            continue;
+        }
+        if (pi < FS_NAME_LEN - 1) part[pi++] = *p;
+        p++;
+    }
+    return cur;
+}
+
+int split_path(const char* path, int start_idx, int* parent_idx, char* last) {
+    char clean[256];
+    strip_quotes(path, clean);
+    int cur;
+    const char* p = clean;
+    if (clean[0] == '/') { cur = ROOT_INDEX; p = clean + 1; }
+    else cur = start_idx;
+    char part[FS_NAME_LEN];
+    int pi = 0;
+    int last_parent = cur;
+    char last_name[FS_NAME_LEN];
+    last_name[0] = 0;
+    while (1) {
+        if (*p == '/' || *p == 0) {
+            part[pi] = 0;
+            if (pi > 0) {
+                if (last_name[0] != 0) {
+                    if (strcmp(last_name, ".") == 0) { }
+                    else if (strcmp(last_name, "..") == 0) { if (last_parent != ROOT_INDEX) last_parent = fs_objects[last_parent].parent; }
+                    else { int idx = fs_find_in(last_parent, last_name); if (idx == -1) return 0; last_parent = idx; }
+                }
+                strcpy(last_name, part);
+            }
+            if (*p == 0) break;
+            pi = 0; p++;
+            continue;
+        }
+        if (pi < FS_NAME_LEN - 1) part[pi++] = *p;
+        p++;
+    }
+    *parent_idx = last_parent;
+    strncpy(last, last_name, FS_NAME_LEN - 1);
+    return (last_name[0] != 0);
+}
+
+/* ============================================
+   Рекурсивные
+   ============================================ */
+void tree_recursive(int dir_idx, int depth) {
+    for (int i = 0; i < FS_MAX_OBJECTS; i++) {
+        if (fs_objects[i].type != OBJ_FREE && fs_objects[i].parent == dir_idx) {
+            for (int j = 0; j < depth; j++) vga_print("  ");
+            if (fs_objects[i].type == OBJ_DIR) {
+                vga_print_color("[D] ", VGA_LIGHT_CYAN);
+                vga_print_color(fs_objects[i].name, VGA_LIGHT_CYAN);
+                vga_putchar('\n');
+                tree_recursive(i, depth + 1);
+            } else {
+                vga_print("[F] ");
+                vga_print(fs_objects[i].name);
+                vga_putchar('\n');
+            }
+        }
+    }
+}
+
+void find_recursive(int dir_idx, const char* name, int* found) {
+    for (int i = 0; i < FS_MAX_OBJECTS; i++) {
+        if (fs_objects[i].type != OBJ_FREE && fs_objects[i].parent == dir_idx) {
+            if (strcmp(fs_objects[i].name, name) == 0) {
+                vga_print("  ");
+                if (fs_objects[i].type == OBJ_DIR) vga_print_color("[D] ", VGA_LIGHT_CYAN);
+                else vga_print("[F] ");
+                vga_print(fs_objects[i].name);
+                vga_putchar('\n');
+                *found = 1;
+            }
+            if (fs_objects[i].type == OBJ_DIR) find_recursive(i, name, found);
+        }
+    }
+}
