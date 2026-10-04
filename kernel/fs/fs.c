@@ -84,6 +84,12 @@ void fs_init(void) {
         filer_app = fs_find_in(apps_idx, "Filer.capp");
         if (filer_app < 0) filer_app = fs_create_in(apps_idx, "Filer.capp", OBJ_APP_FILER);
     }
+    int graph_app = -1;
+    if (apps_idx >= 0) {
+        graph_app = fs_find_in(apps_idx, "GraphTool.capp");
+        if (graph_app < 0)
+            graph_app = fs_create_in(apps_idx, "GraphTool.capp", OBJ_APP_GRAPHTOOL);
+    }
 
     if (desktop_idx >= 0) {
         if (fs_find_in(desktop_idx, "Terminal.yrl") < 0) {
@@ -98,6 +104,10 @@ void fs_init(void) {
             int l = fs_create_in(desktop_idx, "Filer.yrl", OBJ_LINK);
             if (l >= 0) fs_objects[l].target_id = filer_app;
         }
+        if (fs_find_in(desktop_idx, "GraphTool.yrl") < 0) {
+            int l = fs_create_in(desktop_idx, "GraphTool.yrl", OBJ_LINK);
+            if (l >= 0) fs_objects[l].target_id = graph_app;
+        }
         if (fs_find_in(desktop_idx, "Trash.yrl") < 0) {
             int trash_idx = fs_find_in(a, "Trash");
             int l = fs_create_in(desktop_idx, "Trash.yrl", OBJ_LINK);
@@ -109,10 +119,12 @@ void fs_init(void) {
     static const unsigned char code_terminal[] = { 0x10, 0xFF };
     static const unsigned char code_nano[]     = { 0x11, 0xFF };
     static const unsigned char code_filer[]    = { 0x12, 0xFF };
+    static const unsigned char code_graph[] = { 0x13, 0xFF };
 
     pack_capp(term_app,  code_terminal, sizeof(code_terminal));
     pack_capp(nano_app,  code_nano,     sizeof(code_nano));
     pack_capp(filer_app, code_filer,    sizeof(code_filer));
+    pack_capp(graph_app, code_graph, sizeof(code_graph));
 
     /* Содержимое .yrl — ID цели */
     for (int i = 0; i < FS_MAX_OBJECTS; i++) {

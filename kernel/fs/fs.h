@@ -14,6 +14,7 @@
 #define OBJ_APP_TRASH    11
 #define OBJ_APP_NANO     12
 #define OBJ_APP_FILER    13
+#define OBJ_APP_GRAPHTOOL 14    /* ← НОВОЕ */
 #define OBJ_LINK         20
 #define ROOT_INDEX       0
 

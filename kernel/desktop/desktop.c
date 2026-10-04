@@ -216,26 +216,35 @@ void desktop_icons_draw_to_buffer(uint32_t* buf, int bw, int bh) {
         const uint32_t (*img)[32] = 0;
 
         /* Ярлык — иконка по типу цели */
+        /* Ярлык — иконка по типу цели */
         if (ends_with(o->name, ".yrl")) {
             FsObject* t = fs_get(o->target_id);
             if (t && t->type != OBJ_FREE) {
                 switch (t->type) {
-                    case OBJ_APP_TERMINAL: img = icon_terminal; break;
-                    case OBJ_APP_TRASH:    img = icon_trash;    break;
-                    case OBJ_APP_NANO:     img = icon_nano;     break;
-                    case OBJ_APP_FILER:    img = icon_filer;    break;
-                    case OBJ_DIR:          img = icon_folder;   break;
-                    case OBJ_FILE:         img = icon_file;     break;
+                    case OBJ_APP_TERMINAL:  img = icon_terminal;  break;
+                    case OBJ_APP_TRASH:     img = icon_trash;     break;
+                    case OBJ_APP_NANO:      img = icon_nano;      break;
+                    case OBJ_APP_FILER:     img = icon_filer;     break;
+                    case OBJ_APP_GRAPHTOOL: img = icon_graphtool; break;
+                    case OBJ_DIR:           img = icon_folder;    break;
+                    case OBJ_FILE:          img = icon_file;      break;
                 }
             }
         }
-        /* Обычные объекты — иконка по ТИПУ (а не по имени) */
-        else if (o->type == OBJ_APP_TERMINAL) img = icon_terminal;
-        else if (o->type == OBJ_APP_NANO)     img = icon_nano;
-        else if (o->type == OBJ_APP_FILER)    img = icon_filer;
-        else if (o->type == OBJ_APP_TRASH)    img = icon_trash;
-        else if (o->type == OBJ_DIR)          img = icon_folder;
-        else if (o->type == OBJ_FILE)         img = icon_file;
+        /* Картинки .png / .jpg — иконка изображения */
+        else if (ends_with(o->name, ".png") || ends_with(o->name, ".jpg")) {
+            img = icon_image;
+        }
+        /* Прочее — по типу/имени */
+        else if (ends_with(o->name, ".capp")) img = icon_terminal;
+        else if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano")) img = icon_file;
+        else if (o->type == OBJ_DIR)           img = icon_folder;
+        else if (o->type == OBJ_FILE)          img = icon_file;
+        else if (o->type == OBJ_APP_TERMINAL)  img = icon_terminal;
+        else if (o->type == OBJ_APP_NANO)      img = icon_nano;
+        else if (o->type == OBJ_APP_FILER)     img = icon_filer;
+        else if (o->type == OBJ_APP_TRASH)     img = icon_trash;
+        else if (o->type == OBJ_APP_GRAPHTOOL) img = icon_graphtool;
 
         if (!img) continue;
 

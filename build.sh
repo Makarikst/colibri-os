@@ -8,6 +8,9 @@ FLAGS="-m32 -ffreestanding -nostdlib -fno-pic -fno-stack-protector -fno-builtin 
 echo "=== Kernel entry ==="
 $GCC $FLAGS -c kernel_entry.S -o kernel_entry.o
 
+echo "=== GraphTool ==="
+$GCC $FLAGS -c kernel/graphtool/graphtool.c -o graphtool.o
+
 echo "=== VGA ==="
 $GCC $FLAGS -c kernel/vga/vga.c -o vga.o
 
@@ -71,7 +74,7 @@ $GCC $FLAGS -c kernel/filer/filer.c -o filer.o
 echo "=== Link ==="
 $LD -m elf_i386 -T linker.ld -o colibri.cos \
     --start-group \
-    kernel_entry.o kernel.o vga.o kbd.o utils.o kmalloc.o framebuffer.o menupkm.o startmenu.o \
+    kernel_entry.o kernel.o vga.o kbd.o utils.o kmalloc.o framebuffer.o menupkm.o startmenu.o graphtool.o \
     font8x16.o fs.o commands.o nano.o cpe.o shell.o desktop.o mouse.o wm.o term.o filer.o nano_desk.o \
     --end-group
 

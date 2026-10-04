@@ -17,6 +17,7 @@
 #define WM_TYPE_TERMINAL  1
 #define WM_TYPE_NANO      2
 #define WM_TYPE_FILER     3
+#define WM_TYPE_GRAPHTOOL 4
 
 typedef struct {
     int  active;

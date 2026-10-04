@@ -16,12 +16,12 @@
 #include "kernel/filer/filer.h"
 #include "kernel/nano_desk/nano_desk.h"
 #include "kernel/startmenu/startmenu.h"
+#include "kernel/graphtool/graphtool.h"
 
 static uint32_t frame_buffer[1024 * 768];
 static uint32_t desktop_backup[1024 * 768];
 static uint32_t cursor_save[12][8];
 
-/* === ГЛОБАЛЬНЫЕ структуры, чтобы не переполнять стек === */
 static ContextMenu g_menu;
 static StartMenu   g_start_menu;
 
@@ -108,18 +108,23 @@ static void open_filer(void) {
 
 static void open_nano(int fs_index) {
     if (nano.open) return;
-
     int win = wm_create(250, 200, 600, 420, WM_TYPE_NANO, "Nano");
     if (win < 0) return;
-
-    if (fs_index < 0)
-        nano_desk_open_empty(win, 250, 200, 600, 420);
-    else
-        nano_desk_open_file(fs_index, win, 250, 200, 600, 420);
-
+    if (fs_index < 0) nano_desk_open_empty(win, 250, 200, 600, 420);
+    else              nano_desk_open_file(fs_index, win, 250, 200, 600, 420);
     nano.buf_pixels = frame_buffer;
     nano.bw = 1024;
     nano.bh = 768;
+}
+
+static void open_graphtool(int fs_index) {
+    if (graphtool.open) return;
+    int win = wm_create(300, 100, 340, 420, WM_TYPE_GRAPHTOOL, "GraphTool");
+    if (win < 0) return;
+    graphtool_open(win, 300, 100, 340, 420, fs_index);
+    graphtool.buf = frame_buffer;
+    graphtool.buf_w = 1024;
+    graphtool.buf_h = 768;
 }
 
 static void open_filer_at(int dir_index) {
@@ -129,54 +134,12 @@ static void open_filer_at(int dir_index) {
 }
 
 /* ============================================
-   Интерпретатор байт-кода .capp
-   ============================================ */
-static int run_capp(FsObject* o) {
-    if (!o) return 0;
-
-    if (o->data[0] != 'C' || o->data[1] != 'A' ||
-        o->data[2] != 'P' || o->data[3] != 'P') return 0;
-    if (o->data[4] != 2) return 0;
-
-    int code_offset = (unsigned char)o->data[5] | ((unsigned char)o->data[6] << 8);
-    int code_size   = (unsigned char)o->data[7] | ((unsigned char)o->data[8] << 8);
-
-    if (code_size <= 0 || code_size > 4000) return 0;
-    if (code_offset + code_size > o->size)  return 0;
-
-    int pc = 0;
-    while (pc < code_size) {
-        unsigned char op = (unsigned char)o->data[code_offset + pc];
-        pc++;
-
-        if (op == 0xFF) break;
-
-        switch (op) {
-            case 0x01: {
-                if (pc >= code_size) return 1;
-                char c = o->data[code_offset + pc++];
-                vga_putchar(c);
-                break;
-            }
-            case 0x05: vga_putchar('\n'); break;
-            case 0x10: open_terminal(); break;
-            case 0x11: open_nano(-1);   break;
-            case 0x12: open_filer();    break;
-            default: return 1;
-        }
-    }
-    return 1;
-}
-
-/* ============================================
-   Открыть объект — по расширению
+   Проверка, работает ли приложение (по магии CAPP)
    ============================================ */
 /* ============================================
-   Проверяет, работает ли приложение:
-   ищет <name>.capp в ~/alpha/Applications и проверяет магию "CAPP"
+   Проверка, работает ли приложение (по магии CAPP)
    ============================================ */
 static int app_is_working(const char* base_name) {
-    /* Ищем папку Applications */
     int colibri = -1, users = -1, alpha = -1, apps = -1;
     for (int i = 0; i < FS_MAX_OBJECTS; i++) {
         FsObject* o = fs_get(i);
@@ -199,31 +162,26 @@ static int app_is_working(const char* base_name) {
         if (o->parent == alpha && strcmp(o->name, "Applications") == 0) apps = i;
     }
     if (apps < 0) return 0;
-
-    /* Ищем <base_name>.capp и проверяем магию */
     for (int i = 0; i < FS_MAX_OBJECTS; i++) {
         FsObject* o = fs_get(i);
         if (!o || o->type == OBJ_FREE) continue;
         if (o->parent != apps) continue;
         if (!ends_with(o->name, ".capp")) continue;
         if (!starts_with(o->name, base_name)) continue;
-
         if (o->size >= 9 &&
             o->data[0] == 'C' && o->data[1] == 'A' &&
-            o->data[2] == 'P' && o->data[3] == 'P') {
-            return 1;   /* приложение рабочее */
-        }
+            o->data[2] == 'P' && o->data[3] == 'P') return 1;
     }
     return 0;
 }
 
 /* ============================================
-   Открыть объект — с проверкой приложений
+   Открыть объект
    ============================================ */
 static void open_object(FsObject* o, int fs_idx) {
     if (!o) return;
 
-    /* Ярлык — идём к цели */
+    /* Ярлык .yrl — идём к цели по target_id */
     if (ends_with(o->name, ".yrl")) {
         int target = o->target_id;
         if (target < 0 || target >= FS_MAX_OBJECTS) return;
@@ -233,14 +191,23 @@ static void open_object(FsObject* o, int fs_idx) {
         return;
     }
 
-    /* .capp — открываем ТОЛЬКО если приложение рабочее */
+    /* .capp — только если приложение рабочее */
     if (ends_with(o->name, ".capp")) {
         if (app_is_working("Terminal") && starts_with(o->name, "Terminal"))
             open_terminal();
         else if (app_is_working("Filer") && starts_with(o->name, "Filer"))
             open_filer();
-        else if (app_is_working("Nano") && starts_with(o->name, "Nano"))
+        else if (app_is_working("Nano")  && starts_with(o->name, "Nano"))
             open_nano(-1);
+        else if (app_is_working("GraphTool") && starts_with(o->name, "GraphTool"))
+            open_graphtool(-1);
+        return;
+    }
+
+    /* Картинки .png / .jpg — в GraphTool, если он рабочий */
+    if (ends_with(o->name, ".png") || ends_with(o->name, ".jpg")) {
+        if (app_is_working("GraphTool"))
+            open_graphtool(fs_idx);
         return;
     }
 
@@ -250,7 +217,6 @@ static void open_object(FsObject* o, int fs_idx) {
             open_filer_at(fs_idx);
         return;
     }
-    //
 
     /* .txt / .nano — только если Nano работает */
     if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano")) {
@@ -259,14 +225,12 @@ static void open_object(FsObject* o, int fs_idx) {
         return;
     }
 }
+
 static void window_content_cb(int type, int wx, int wy, int ww, int wh) {
-    if (type == WM_TYPE_TERMINAL) {
-        term_render_for_window(wx, wy, ww, wh);
-    } else if (type == WM_TYPE_FILER) {
-        filer_render_for_window(wx, wy, ww, wh);
-    } else if (type == WM_TYPE_NANO) {
-        nano_desk_render_for_window(wx, wy, ww, wh);
-    }
+    if (type == WM_TYPE_TERMINAL)  term_render_for_window(wx, wy, ww, wh);
+    else if (type == WM_TYPE_FILER) filer_render_for_window(wx, wy, ww, wh);
+    else if (type == WM_TYPE_NANO)  nano_desk_render_for_window(wx, wy, ww, wh);
+    else if (type == WM_TYPE_GRAPHTOOL) graphtool_render_for_window(wx, wy, ww, wh);
 }
 
 static int icon_hit_test(int mx, int my) {
@@ -294,53 +258,21 @@ static int point_in_window(int mx, int my) {
 static void full_redraw(ContextMenu* menu, StartMenu* sm) {
     for (int i = 0; i < 1024 * 768; i++)
         frame_buffer[i] = desktop_backup[i];
-
     desktop_icons_draw_to_buffer(frame_buffer, 1024, 768);
     wm_draw_all(frame_buffer, 1024, 768, window_content_cb);
     menu_draw(menu, frame_buffer, 1024, 768);
     startmenu_draw(sm, frame_buffer, 1024, 768);
-
     save_under_cursor(mouse.x, mouse.y);
     draw_cursor_in_buffer(mouse.x, mouse.y);
-
     flush_frame();
 }
 
 static const char* menu_icon_labels[]  = { "Открыть", "Удалить", "Отмена" };
-static const int   menu_icon_actions[] = { MENU_ACTION_OPEN,
-                                           MENU_ACTION_DELETE,
-                                           MENU_ACTION_CANCEL };
-
+static const int   menu_icon_actions[] = { MENU_ACTION_OPEN, MENU_ACTION_DELETE, MENU_ACTION_CANCEL };
 static const char* menu_desk_labels[]  = { "Создать файл", "Создать папку", "Отмена" };
-static const int   menu_desk_actions[] = { MENU_ACTION_NEW_FILE,
-                                           MENU_ACTION_NEW_FOLDER,
-                                           MENU_ACTION_CANCEL };
-
-static void pic_mask_all(void) {
-    /* ICW1: start init */
-    outb(0x20, 0x11);
-    outb(0xA0, 0x11);
-    /* ICW2: vector offsets */
-    outb(0x21, 0x20);
-    outb(0xA1, 0x28);
-    /* ICW3: cascade */
-    outb(0x21, 0x04);
-    outb(0xA1, 0x02);
-    /* ICW4: 8086 mode */
-    outb(0x21, 0x01);
-    outb(0xA1, 0x01);
-    /* IMR: замаскировать ВСЕ прерывания */
-    outb(0x21, 0xFF);
-    outb(0xA1, 0xFF);
-
-    /* На всякий случай — выключаем прерывания на CPU */
-    cpu_cli();
-}
-
+static const int   menu_desk_actions[] = { MENU_ACTION_NEW_FILE, MENU_ACTION_NEW_FOLDER, MENU_ACTION_CANCEL };
 
 void kernel_main(void) {
-    cpu_cli();          /* ← ДОБАВЬ */
-    pic_mask_all();     /* ← ДОБАВЬ */
     vga_init();
     vga_banner();
     kbd_init();
@@ -369,6 +301,7 @@ void kernel_main(void) {
     open_terminal();
     filer_init(&filer);
     nano_desk_init();
+    graphtool_init();
 
     desktop_scan_files();
 
@@ -390,10 +323,9 @@ void kernel_main(void) {
         int term_scrolled = 0;
         int menu_action_changed = 0;
         int startmenu_changed = 0;
+        int graphtool_changed = 0;
 
-        /* ============================================
-           Меню Пуск
-           ============================================ */
+        /* Меню Пуск */
         if (g_start_menu.open) {
             int sel = startmenu_update(&g_start_menu, mouse.x, mouse.y, left, prev_left);
             if (sel > 0) {
@@ -406,7 +338,6 @@ void kernel_main(void) {
             }
         }
 
-        /* Клик по кнопке RUN (колибри) */
         int left_now = left && !prev_left;
         if (left_now && !g_start_menu.open && !g_menu.open) {
             int bx = 4;
@@ -420,24 +351,30 @@ void kernel_main(void) {
             }
         }
 
-        /* ============================================
-           Скролл терминала колёсиком
-           ============================================ */
+        /* Скролл терминала */
         if (mouse.wheel != 0 && term.open) {
             Window* tw = wm_get(term.win_idx);
             if (tw && tw->active &&
                 mouse.x >= tw->x && mouse.x < tw->x + tw->w &&
-                mouse.y >= tw->y && mouse.y < tw->y + tw->h)
-            {
+                mouse.y >= tw->y && mouse.y < tw->y + tw->h) {
                 term_scroll(&term, mouse.wheel);
                 term_scrolled = 1;
             }
             mouse.wheel = 0;
         }
 
-        /* ============================================
-           Клавиатура
-           ============================================ */
+        /* Графический редактор — рисование */
+        if (graphtool.open && !g_menu.open && !g_start_menu.open) {
+            Window* gw = wm_get(graphtool.win_idx);
+            if (gw && gw->active &&
+                mouse.x >= gw->x && mouse.x < gw->x + gw->w &&
+                mouse.y >= gw->y && mouse.y < gw->y + gw->h) {
+                if (graphtool_handle_click(mouse.x, mouse.y, left, prev_left))
+                    graphtool_changed = 1;
+            }
+        }
+
+        /* Клавиатура */
         while (kbd_has_key()) {
             char k = kbd_get_key();
             if (k == 0) continue;
@@ -453,43 +390,30 @@ void kernel_main(void) {
 
             if (filer.open && !filer.rename_mode && k == '\n') {
                 int act = filer_handle_enter(&filer);
-                if (act == 1) {
-                    filer_changed = 1;
-                } else if (act == 2) {
+                if (act == 1) filer_changed = 1;
+                else if (act == 2) {
                     int idx = filer.item_indices[filer.selected];
                     open_nano(idx);
                     filer_changed = 1;
-                } else if (act == 3) {
-                    filer_changed = 1;
-                }
+                } else if (act == 3) filer_changed = 1;
                 continue;
             }
 
-            if (nano.open) {
-                nano_desk_handle_key(k);
-            }
+            if (nano.open) nano_desk_handle_key(k);
             else if (term.open) {
-                if (k == KEY_UP) {
-                    term_scroll(&term, +1);
-                    term_scrolled = 1;
-                } else if (k == KEY_DOWN) {
-                    term_scroll(&term, -1);
-                    term_scrolled = 1;
-                } else {
-                    term_handle_key(&term, k);
-                }
+                if (k == KEY_UP)   { term_scroll(&term, +1); term_scrolled = 1; }
+                else if (k == KEY_DOWN) { term_scroll(&term, -1); term_scrolled = 1; }
+                else term_handle_key(&term, k);
             }
         }
 
         int right_now = right && !prev_right;
 
         if (right_now && !g_menu.open && filer.open &&
-            point_in_window(mouse.x, mouse.y))
-        {
+            point_in_window(mouse.x, mouse.y)) {
             int mx = mouse.x, my = mouse.y;
             if (mx >= filer.cur_x && mx < filer.cur_x + filer.width &&
-                my >= filer.cur_y && my < filer.cur_y + filer.height)
-            {
+                my >= filer.cur_y && my < filer.cur_y + filer.height) {
                 int row = (my - filer.cur_y) / FILER_ITEM_H;
                 if (row >= 0 && row < filer.item_count) {
                     filer.selected = row;
@@ -505,10 +429,8 @@ void kernel_main(void) {
 
         if (right_now && !g_menu.open && !point_in_window(mouse.x, mouse.y)) {
             int hit = icon_hit_test(mouse.x, mouse.y);
-            if (hit >= 0)
-                menu_open(&g_menu, mouse.x, mouse.y, menu_icon_labels, menu_icon_actions, 3, hit);
-            else
-                menu_open(&g_menu, mouse.x, mouse.y, menu_desk_labels, menu_desk_actions, 3, -1);
+            if (hit >= 0) menu_open(&g_menu, mouse.x, mouse.y, menu_icon_labels, menu_icon_actions, 3, hit);
+            else          menu_open(&g_menu, mouse.x, mouse.y, menu_desk_labels, menu_desk_actions, 3, -1);
             full_redraw(&g_menu, &g_start_menu);
             prev_x = mouse.x; prev_y = mouse.y;
             prev_left = left; prev_right = right;
@@ -543,9 +465,7 @@ void kernel_main(void) {
         }
 
         if (filer.open && left && !prev_left && !g_menu.open) {
-            if (filer_handle_click(&filer, mouse.x, mouse.y)) {
-                filer_changed = 1;
-            }
+            if (filer_handle_click(&filer, mouse.x, mouse.y)) filer_changed = 1;
         }
 
         int icon_action_changed = 0;
@@ -582,10 +502,11 @@ void kernel_main(void) {
         }
         if (nano.open && nano.win_idx >= 0) {
             Window* w = wm_get(nano.win_idx);
-            if (!w || !w->active) {
-                nano_desk_close();
-                wm_changed = 1;
-            }
+            if (!w || !w->active) { nano_desk_close(); wm_changed = 1; }
+        }
+        if (graphtool.open && graphtool.win_idx >= 0) {
+            Window* w = wm_get(graphtool.win_idx);
+            if (!w || !w->active) { graphtool_save(); graphtool_close(); wm_changed = 1; }
         }
 
         int mouse_moved     = (mouse.x != prev_x || mouse.y != prev_y);
@@ -593,7 +514,7 @@ void kernel_main(void) {
 
         int need_full = (key_pressed || menu_action_changed ||
                          icon_action_changed || wm_changed || filer_changed ||
-                         term_scrolled || startmenu_changed);
+                         term_scrolled || startmenu_changed || graphtool_changed);
 
         if (need_full) {
             full_redraw(&g_menu, &g_start_menu);
