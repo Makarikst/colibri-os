@@ -241,25 +241,6 @@ void term_render(Terminal* t) {
     }
 
     /* === ОТЛАДКА: показываем sb_count и view_offset === */
-    {
-        char dbg[32];
-        int n = 0;
-        dbg[n++] = 's'; dbg[n++] = 'b'; dbg[n++] = '=';
-        int v = t->sb_count;
-        char tmp[8]; int ti = 0;
-        if (v == 0) tmp[ti++] = '0';
-        while (v > 0) { tmp[ti++] = '0' + (v % 10); v /= 10; }
-        while (ti > 0) dbg[n++] = tmp[--ti];
-        dbg[n++] = ' '; dbg[n++] = 'v'; dbg[n++] = '=';
-        v = t->view_offset; ti = 0;
-        if (v == 0) tmp[ti++] = '0';
-        while (v > 0) { tmp[ti++] = '0' + (v % 10); v /= 10; }
-        while (ti > 0) dbg[n++] = tmp[--ti];
-        dbg[n] = 0;
-
-        term_draw_string(t, t->win_x + 8, t->win_y + WM_TITLE_H + 2,
-                         dbg, 0xFFFF00, 0x000000);
-    }
 }
 
 void term_render_for_window(int win_x, int win_y, int win_w, int win_h) {
