@@ -24,6 +24,7 @@ typedef struct {
     int  parent;
     int  size;
     int  target_id;
+    int  saved_type;      /* ← НОВОЕ: исходный тип приложения */
 } FsObject;
 
 void fs_init(void);

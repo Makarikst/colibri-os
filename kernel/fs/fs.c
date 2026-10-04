@@ -21,12 +21,6 @@ int fs_find_in(int parent, const char* name) {
 
 /* ============================================
    Упаковка .capp с байт-кодом
-   Формат:
-     [0..3]  'C' 'A' 'P' 'P'
-     [4]     версия = 2
-     [5..6]  offset кода (LE)
-     [7..8]  size кода (LE)
-     [9..N]  байт-код
    ============================================ */
 static void pack_capp(int idx, const unsigned char* code, int code_size) {
     if (idx < 0) return;
@@ -37,7 +31,7 @@ static void pack_capp(int idx, const unsigned char* code, int code_size) {
     o->data[1] = 'A';
     o->data[2] = 'P';
     o->data[3] = 'P';
-    o->data[4] = 2;                            /* версия 2 = байт-код */
+    o->data[4] = 2;
     o->data[5] = 9;
     o->data[6] = 0;
     o->data[7] = (char)(code_size & 0xFF);
@@ -57,6 +51,7 @@ void fs_init(void) {
         fs_objects[i].size = 0;
         fs_objects[i].data[0] = 0;
         fs_objects[i].target_id = -1;
+        fs_objects[i].saved_type = -1;
     }
     fs_objects[ROOT_INDEX].type = OBJ_DIR;
     strcpy(fs_objects[ROOT_INDEX].name, "/");
@@ -110,34 +105,10 @@ void fs_init(void) {
         }
     }
 
-    /* ============================================
-       Байт-код для приложений
-       Команды:
-         0x01 <char>   — вывести символ
-         0x05          — перевод строки
-         0x10          — открыть окно Terminal (встроенный вызов)
-         0x11          — открыть окно Nano
-         0x12          — открыть окно Filer
-         0xFF          — конец
-       ============================================ */
-
-    /* Terminal.capp — открывает встроенное окно Terminal */
-    static const unsigned char code_terminal[] = {
-        0x10,             /* open Terminal */
-        0xFF              /* end */
-    };
-
-    /* Nano.capp */
-    static const unsigned char code_nano[] = {
-        0x11,             /* open Nano */
-        0xFF
-    };
-
-    /* Filer.capp */
-    static const unsigned char code_filer[] = {
-        0x12,             /* open Filer */
-        0xFF
-    };
+    /* Байт-код для приложений */
+    static const unsigned char code_terminal[] = { 0x10, 0xFF };
+    static const unsigned char code_nano[]     = { 0x11, 0xFF };
+    static const unsigned char code_filer[]    = { 0x12, 0xFF };
 
     pack_capp(term_app,  code_terminal, sizeof(code_terminal));
     pack_capp(nano_app,  code_nano,     sizeof(code_nano));
@@ -165,6 +136,13 @@ int fs_create_in(int parent_idx, const char* name, int type) {
             fs_objects[i].size = 0;
             fs_objects[i].data[0] = 0;
             fs_objects[i].target_id = -1;
+            fs_objects[i].saved_type = -1;
+
+            /* Если это приложение — запоминаем исходный тип */
+            if (type == OBJ_APP_TERMINAL || type == OBJ_APP_NANO ||
+                type == OBJ_APP_FILER    || type == OBJ_APP_TRASH) {
+                fs_objects[i].saved_type = type;
+            }
             return i;
         }
     }
@@ -181,6 +159,7 @@ void fs_delete_by_index(int idx) {
     fs_objects[idx].name[0] = 0;
     fs_objects[idx].parent = -1;
     fs_objects[idx].target_id = -1;
+    fs_objects[idx].saved_type = -1;
 }
 
 void strip_quotes(const char* in, char* out) {

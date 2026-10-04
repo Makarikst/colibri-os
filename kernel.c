@@ -21,6 +21,10 @@ static uint32_t frame_buffer[1024 * 768];
 static uint32_t desktop_backup[1024 * 768];
 static uint32_t cursor_save[12][8];
 
+/* === ГЛОБАЛЬНЫЕ структуры, чтобы не переполнять стек === */
+static ContextMenu g_menu;
+static StartMenu   g_start_menu;
+
 static inline void bput(int x, int y, uint32_t color) {
     if (x < 0 || y < 0 || x >= 1024 || y >= 768) return;
     frame_buffer[y * 1024 + x] = color;
@@ -167,9 +171,59 @@ static int run_capp(FsObject* o) {
 /* ============================================
    Открыть объект — по расширению
    ============================================ */
+/* ============================================
+   Проверяет, работает ли приложение:
+   ищет <name>.capp в ~/alpha/Applications и проверяет магию "CAPP"
+   ============================================ */
+static int app_is_working(const char* base_name) {
+    /* Ищем папку Applications */
+    int colibri = -1, users = -1, alpha = -1, apps = -1;
+    for (int i = 0; i < FS_MAX_OBJECTS; i++) {
+        FsObject* o = fs_get(i);
+        if (!o || o->type != OBJ_DIR) continue;
+        if (o->parent == ROOT_INDEX && strcmp(o->name, "colibri") == 0) colibri = i;
+    }
+    for (int i = 0; i < FS_MAX_OBJECTS && colibri >= 0; i++) {
+        FsObject* o = fs_get(i);
+        if (!o || o->type != OBJ_DIR) continue;
+        if (o->parent == colibri && strcmp(o->name, "users") == 0) users = i;
+    }
+    for (int i = 0; i < FS_MAX_OBJECTS && users >= 0; i++) {
+        FsObject* o = fs_get(i);
+        if (!o || o->type != OBJ_DIR) continue;
+        if (o->parent == users && strcmp(o->name, "alpha") == 0) alpha = i;
+    }
+    for (int i = 0; i < FS_MAX_OBJECTS && alpha >= 0; i++) {
+        FsObject* o = fs_get(i);
+        if (!o || o->type != OBJ_DIR) continue;
+        if (o->parent == alpha && strcmp(o->name, "Applications") == 0) apps = i;
+    }
+    if (apps < 0) return 0;
+
+    /* Ищем <base_name>.capp и проверяем магию */
+    for (int i = 0; i < FS_MAX_OBJECTS; i++) {
+        FsObject* o = fs_get(i);
+        if (!o || o->type == OBJ_FREE) continue;
+        if (o->parent != apps) continue;
+        if (!ends_with(o->name, ".capp")) continue;
+        if (!starts_with(o->name, base_name)) continue;
+
+        if (o->size >= 9 &&
+            o->data[0] == 'C' && o->data[1] == 'A' &&
+            o->data[2] == 'P' && o->data[3] == 'P') {
+            return 1;   /* приложение рабочее */
+        }
+    }
+    return 0;
+}
+
+/* ============================================
+   Открыть объект — с проверкой приложений
+   ============================================ */
 static void open_object(FsObject* o, int fs_idx) {
     if (!o) return;
 
+    /* Ярлык — идём к цели */
     if (ends_with(o->name, ".yrl")) {
         int target = o->target_id;
         if (target < 0 || target >= FS_MAX_OBJECTS) return;
@@ -179,22 +233,31 @@ static void open_object(FsObject* o, int fs_idx) {
         return;
     }
 
+    /* .capp — открываем ТОЛЬКО если приложение рабочее */
     if (ends_with(o->name, ".capp")) {
-        run_capp(o);
+        if (app_is_working("Terminal") && starts_with(o->name, "Terminal"))
+            open_terminal();
+        else if (app_is_working("Filer") && starts_with(o->name, "Filer"))
+            open_filer();
+        else if (app_is_working("Nano") && starts_with(o->name, "Nano"))
+            open_nano(-1);
         return;
     }
 
+    /* Папка — только если Filer работает */
     if (o->type == OBJ_DIR) {
-        open_filer_at(fs_idx);
+        if (app_is_working("Filer"))
+            open_filer_at(fs_idx);
         return;
     }
 
+    /* .txt / .nano — только если Nano работает */
     if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano")) {
-        open_nano(fs_idx);
+        if (app_is_working("Nano"))
+            open_nano(fs_idx);
         return;
     }
 }
-
 static void window_content_cb(int type, int wx, int wy, int ww, int wh) {
     if (type == WM_TYPE_TERMINAL) {
         term_render_for_window(wx, wy, ww, wh);
@@ -252,7 +315,31 @@ static const int   menu_desk_actions[] = { MENU_ACTION_NEW_FILE,
                                            MENU_ACTION_NEW_FOLDER,
                                            MENU_ACTION_CANCEL };
 
+static void pic_mask_all(void) {
+    /* ICW1: start init */
+    outb(0x20, 0x11);
+    outb(0xA0, 0x11);
+    /* ICW2: vector offsets */
+    outb(0x21, 0x20);
+    outb(0xA1, 0x28);
+    /* ICW3: cascade */
+    outb(0x21, 0x04);
+    outb(0xA1, 0x02);
+    /* ICW4: 8086 mode */
+    outb(0x21, 0x01);
+    outb(0xA1, 0x01);
+    /* IMR: замаскировать ВСЕ прерывания */
+    outb(0x21, 0xFF);
+    outb(0xA1, 0xFF);
+
+    /* На всякий случай — выключаем прерывания на CPU */
+    cpu_cli();
+}
+
+
 void kernel_main(void) {
+    cpu_cli();          /* ← ДОБАВЬ */
+    pic_mask_all();     /* ← ДОБАВЬ */
     vga_init();
     vga_banner();
     kbd_init();
@@ -284,13 +371,10 @@ void kernel_main(void) {
 
     desktop_scan_files();
 
-    ContextMenu menu;
-    menu_init(&menu);
+    menu_init(&g_menu);
+    startmenu_init(&g_start_menu);
 
-    StartMenu start_menu;
-    startmenu_init(&start_menu);
-
-    full_redraw(&menu, &start_menu);
+    full_redraw(&g_menu, &g_start_menu);
 
     int prev_x = mouse.x, prev_y = mouse.y;
     int prev_left = mouse.left, prev_right = mouse.right;
@@ -309,28 +393,28 @@ void kernel_main(void) {
         /* ============================================
            Меню Пуск
            ============================================ */
-        if (start_menu.open) {
-            int sel = startmenu_update(&start_menu, mouse.x, mouse.y, left, prev_left);
+        if (g_start_menu.open) {
+            int sel = startmenu_update(&g_start_menu, mouse.x, mouse.y, left, prev_left);
             if (sel > 0) {
                 int fs_idx = sel - 1;
                 FsObject* o = fs_get(fs_idx);
                 open_object(o, fs_idx);
                 startmenu_changed = 1;
-            } else if (!start_menu.open) {
+            } else if (!g_start_menu.open) {
                 startmenu_changed = 1;
             }
         }
 
         /* Клик по кнопке RUN (колибри) */
         int left_now = left && !prev_left;
-        if (left_now && !start_menu.open && !menu.open) {
+        if (left_now && !g_start_menu.open && !g_menu.open) {
             int bx = 4;
             int by = fb_info.height - 48 + 4;
             int bw = 64 - 8;
             int bh = 48 - 8;
             if (mouse.x >= bx && mouse.x < bx + bw &&
                 mouse.y >= by && mouse.y < by + bh) {
-                startmenu_open(&start_menu, fb_info.width, fb_info.height);
+                startmenu_open(&g_start_menu, fb_info.width, fb_info.height);
                 startmenu_changed = 1;
             }
         }
@@ -398,7 +482,7 @@ void kernel_main(void) {
 
         int right_now = right && !prev_right;
 
-        if (right_now && !menu.open && filer.open &&
+        if (right_now && !g_menu.open && filer.open &&
             point_in_window(mouse.x, mouse.y))
         {
             int mx = mouse.x, my = mouse.y;
@@ -414,25 +498,25 @@ void kernel_main(void) {
             }
             prev_x = mouse.x; prev_y = mouse.y;
             prev_left = left; prev_right = right;
-            full_redraw(&menu, &start_menu);
+            full_redraw(&g_menu, &g_start_menu);
             continue;
         }
 
-        if (right_now && !menu.open && !point_in_window(mouse.x, mouse.y)) {
+        if (right_now && !g_menu.open && !point_in_window(mouse.x, mouse.y)) {
             int hit = icon_hit_test(mouse.x, mouse.y);
             if (hit >= 0)
-                menu_open(&menu, mouse.x, mouse.y, menu_icon_labels, menu_icon_actions, 3, hit);
+                menu_open(&g_menu, mouse.x, mouse.y, menu_icon_labels, menu_icon_actions, 3, hit);
             else
-                menu_open(&menu, mouse.x, mouse.y, menu_desk_labels, menu_desk_actions, 3, -1);
-            full_redraw(&menu, &start_menu);
+                menu_open(&g_menu, mouse.x, mouse.y, menu_desk_labels, menu_desk_actions, 3, -1);
+            full_redraw(&g_menu, &g_start_menu);
             prev_x = mouse.x; prev_y = mouse.y;
             prev_left = left; prev_right = right;
             continue;
         }
 
-        if (menu.open) {
-            int saved_target = menu.target_icon;
-            int action = menu_update(&menu, mouse.x, mouse.y, left, prev_left);
+        if (g_menu.open) {
+            int saved_target = g_menu.target_icon;
+            int action = menu_update(&g_menu, mouse.x, mouse.y, left, prev_left);
             if (action != MENU_ACTION_NONE) {
                 menu_action_changed = 1;
                 if (action == MENU_ACTION_NEW_FILE) {
@@ -457,14 +541,14 @@ void kernel_main(void) {
             }
         }
 
-        if (filer.open && left && !prev_left && !menu.open) {
+        if (filer.open && left && !prev_left && !g_menu.open) {
             if (filer_handle_click(&filer, mouse.x, mouse.y)) {
                 filer_changed = 1;
             }
         }
 
         int icon_action_changed = 0;
-        if (!menu.open && !start_menu.open) {
+        if (!g_menu.open && !g_start_menu.open) {
             int clicked_icon = desktop_icons_update(mouse.x, mouse.y, left, prev_left);
             if (clicked_icon >= 0) {
                 icon_action_changed = 1;
@@ -479,7 +563,7 @@ void kernel_main(void) {
         }
 
         int wm_changed = 0;
-        if (!menu.open && !start_menu.open) {
+        if (!g_menu.open && !g_start_menu.open) {
             wm_update(mouse.x, mouse.y, left, prev_left);
             for (int i = 0; i < WM_MAX_WINDOWS; i++) {
                 Window* w = wm_get(i);
@@ -511,7 +595,7 @@ void kernel_main(void) {
                          term_scrolled || startmenu_changed);
 
         if (need_full) {
-            full_redraw(&menu, &start_menu);
+            full_redraw(&g_menu, &g_start_menu);
         } else if (mouse_moved || buttons_changed) {
             restore_under_cursor(prev_x, prev_y);
             save_under_cursor(mouse.x, mouse.y);

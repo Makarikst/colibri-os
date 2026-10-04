@@ -1,8 +1,7 @@
 #include "filer.h"
 #include "../wm/wm.h"
-#include "../kbd/kbd.h"
+#include "../utils/utils.h"
 
-/* Глобальный filer */
 Filer filer;
 
 /* ============================================
@@ -134,7 +133,6 @@ void filer_start_rename(Filer* f) {
 
 /* ============================================
    Переименование — обработка клавиш
-   Возвращает 1, если клавиша "съедена"
    ============================================ */
 int filer_handle_key(Filer* f, char key) {
     if (!f->open || !f->rename_mode) return 0;
@@ -146,17 +144,49 @@ int filer_handle_key(Filer* f, char key) {
             int idx = f->item_indices[f->rename_row];
             FsObject* o = fs_get(idx);
             if (o) {
-                /* Проверяем, нет ли уже такого имени в этой папке */
                 int exists = fs_find_in(o->parent, f->rename_buf);
                 if (exists < 0 || exists == idx) {
+                    /* Переписываем имя */
                     int i = 0;
                     while (f->rename_buf[i] && i < FS_NAME_LEN - 1) {
                         o->name[i] = f->rename_buf[i];
                         i++;
                     }
                     o->name[i] = 0;
+
+                    /* ============================================
+                       СМЕНА ТИПА ПО РАСШИРЕНИЮ
+                       ============================================ */
+                    int new_is_capp = ends_with(o->name, ".capp");
+                    int new_is_txt  = ends_with(o->name, ".txt") ||
+                                      ends_with(o->name, ".nano");
+                    int new_is_yrl  = ends_with(o->name, ".yrl");
+
+                    if (new_is_capp) {
+                        /* Вернуть исходный тип приложения (если был) */
+                        if (o->saved_type != -1)
+                            o->type = o->saved_type;
+                        else if (o->type != OBJ_DIR &&
+                                 o->type != OBJ_FILE)
+                            o->type = OBJ_FILE;
+                    }
+                    else if (new_is_txt || new_is_yrl) {
+                        /* Запомнить текущий тип, если это приложение */
+                        if (o->type == OBJ_APP_TERMINAL || o->type == OBJ_APP_NANO ||
+                            o->type == OBJ_APP_FILER    || o->type == OBJ_APP_TRASH) {
+                            o->saved_type = o->type;
+                        }
+                        o->type = OBJ_FILE;
+                    }
+                    else {
+                        /* Неизвестное расширение → обычный файл */
+                        if (o->type == OBJ_APP_TERMINAL || o->type == OBJ_APP_NANO ||
+                            o->type == OBJ_APP_FILER    || o->type == OBJ_APP_TRASH) {
+                            o->saved_type = o->type;
+                        }
+                        o->type = OBJ_FILE;
+                    }
                 }
-                /* Если имя занято — просто отменяем переименование */
             }
         }
         f->rename_mode = 0;
@@ -193,74 +223,11 @@ int filer_handle_key(Filer* f, char key) {
         return 1;
     }
 
-    return 1;  /* в режиме переименования всё "съедаем" */
-}
-
-/* ============================================
-   Клик
-   ============================================ */
-/* ============================================
-   Клик
-   Возвращает:
-     0 — мимо
-     1 — обычный клик (выбор)
-     2 — двойной клик (открыть)
-   ============================================ */
-/* ============================================
-   Клик по Filer
-   Возвращает:
-     0 — мимо
-     1 — выбрали строку (нужна перерисовка)
-     2 — открыли папку (нужна перерисовка)
-     3 — открыли файл (нужна перерисовка)
-   ============================================ */
-/* ============================================
-   Клик по Filer
-   Возвращает 1, если что-то изменилось
-   ============================================ */
-int filer_handle_click(Filer* f, int mx, int my) {
-    if (!f->open) return 0;
-
-    /* Если идёт переименование — клик мышью отменяет */
-    if (f->rename_mode) {
-        f->rename_mode = 0;
-        f->rename_row = -1;
-        f->rename_buf[0] = 0;
-        f->rename_len = 0;
-        return 1;
-    }
-
-    /* Кнопка "Up" */
-    if (mx >= f->up_btn_x && mx < f->up_btn_x + f->up_btn_w &&
-        my >= f->up_btn_y && my < f->up_btn_y + f->up_btn_h) {
-        if (f->current_dir != ROOT_INDEX) {
-            FsObject* cur = fs_get(f->current_dir);
-            if (cur && cur->parent >= 0) {
-                f->current_dir = cur->parent;
-                filer_reload(f);
-                return 1;
-            }
-        }
-        return 1;
-        }
-
-    if (mx < f->cur_x || mx >= f->cur_x + f->width) return 0;
-    if (my < f->cur_y || my >= f->cur_y + f->height) return 0;
-
-    int row = (my - f->cur_y) / FILER_ITEM_H;
-    if (row < 0 || row >= f->item_count) return 0;
-
-    /* Просто выбираем строку */
-    f->selected = row;
     return 1;
 }
 
 /* ============================================
-   Enter по Filer
-   Возвращает:
-     0 — ничего не выбрано
-     1 — зашли в папку
-     2 — файл, открыть в Nano
+   Enter — открыть папку / файл
    ============================================ */
 int filer_handle_enter(Filer* f) {
     if (!f->open) return 0;
@@ -277,16 +244,51 @@ int filer_handle_enter(Filer* f) {
         return 1;
     }
 
-    /* Файл — решаем, открывать ли */
     if (o->type == OBJ_FILE) {
-        if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano")) {
-            return 2;   /* открыть в Nano */
-        }
-        /* Другие файлы — не открываем */
-        return 3;       /* сигнал "нельзя открыть" */
+        if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano"))
+            return 2;
+        return 3;
     }
 
     return 0;
+}
+
+/* ============================================
+   Клик
+   ============================================ */
+int filer_handle_click(Filer* f, int mx, int my) {
+    if (!f->open) return 0;
+
+    if (f->rename_mode) {
+        f->rename_mode = 0;
+        f->rename_row = -1;
+        f->rename_buf[0] = 0;
+        f->rename_len = 0;
+        return 1;
+    }
+
+    /* Кнопка Up */
+    if (mx >= f->up_btn_x && mx < f->up_btn_x + f->up_btn_w &&
+        my >= f->up_btn_y && my < f->up_btn_y + f->up_btn_h) {
+        if (f->current_dir != ROOT_INDEX) {
+            FsObject* cur = fs_get(f->current_dir);
+            if (cur && cur->parent >= 0) {
+                f->current_dir = cur->parent;
+                filer_reload(f);
+                return 1;
+            }
+        }
+        return 1;
+    }
+
+    if (mx < f->cur_x || mx >= f->cur_x + f->width) return 0;
+    if (my < f->cur_y || my >= f->cur_y + f->height) return 0;
+
+    int row = (my - f->cur_y) / FILER_ITEM_H;
+    if (row < 0 || row >= f->item_count) return 0;
+
+    f->selected = row;
+    return 1;
 }
 
 /* ============================================
@@ -295,13 +297,11 @@ int filer_handle_enter(Filer* f) {
 void filer_render(Filer* f) {
     if (!f->open || !f->buf) return;
 
-    /* Кнопка «вверх» */
     for (int y = f->up_btn_y; y < f->up_btn_y + f->up_btn_h; y++)
         for (int x = f->up_btn_x; x < f->up_btn_x + f->up_btn_w; x++)
             put_pixel(f, x, y, 0x404060);
     draw_string(f, "Up", f->up_btn_x + 18, f->up_btn_y + 2, 0xFFFFFF, 0x404060);
 
-    /* Путь */
     {
         char path[128];
         int p = 0;
@@ -327,7 +327,6 @@ void filer_render(Filer* f) {
                     f->up_btn_y + 2, 0xFFFFFF, 0x1A1A2A);
     }
 
-    /* Список */
     for (int i = 0; i < f->item_count; i++) {
         int iy = f->cur_y + i * FILER_ITEM_H;
         if (iy + FILER_ITEM_H > f->cur_y + f->height) break;
@@ -346,7 +345,6 @@ void filer_render(Filer* f) {
         draw_string(f, prefix, f->cur_x + 4, iy + 2, fg, bg);
 
         if (f->rename_mode && i == f->rename_row) {
-            /* Показываем буфер переименования с курсором '_' */
             char disp[FS_NAME_LEN + 2];
             int k = 0;
             for (int j = 0; j < f->rename_len; j++) disp[k++] = f->rename_buf[j];
@@ -376,7 +374,6 @@ void filer_render(Filer* f) {
     }
 }
 
-/* Специально для wm_draw_all */
 void filer_render_for_window(int win_x, int win_y, int win_w, int win_h) {
     if (!filer.open) return;
     filer.win_x = win_x;

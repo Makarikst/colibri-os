@@ -7,6 +7,9 @@
 DesktopIcon desktop_icons[DESKTOP_MAX_ICONS];
 int         desktop_icons_count = 0;
 
+/* ============================================
+   Инициализация
+   ============================================ */
 void desktop_icons_init(void) {
     for (int i = 0; i < DESKTOP_MAX_ICONS; i++) {
         desktop_icons[i].fs_index = -1;
@@ -129,6 +132,9 @@ void desktop_scan_files(void) {
     }
 }
 
+/* ============================================
+   Вспомогательные рисования
+   ============================================ */
 static void draw_image_32x32_buf(uint32_t* buf, int bw, int bh,
                                   const uint32_t img[32][32],
                                   int x, int y) {
@@ -196,6 +202,9 @@ void desktop_draw_clock(void) {
     fb_print(buf, tx, ty, 0xFFFFFF, 0x0F1F2F);
 }
 
+/* ============================================
+   Отрисовка ярлыков в буфер
+   ============================================ */
 void desktop_icons_draw_to_buffer(uint32_t* buf, int bw, int bh) {
     for (int i = 0; i < desktop_icons_count; i++) {
         DesktopIcon* ic = &desktop_icons[i];
@@ -206,6 +215,7 @@ void desktop_icons_draw_to_buffer(uint32_t* buf, int bw, int bh) {
 
         const uint32_t (*img)[32] = 0;
 
+        /* Ярлык — иконка по типу цели */
         if (ends_with(o->name, ".yrl")) {
             FsObject* t = fs_get(o->target_id);
             if (t && t->type != OBJ_FREE) {
@@ -218,15 +228,14 @@ void desktop_icons_draw_to_buffer(uint32_t* buf, int bw, int bh) {
                     case OBJ_FILE:         img = icon_file;     break;
                 }
             }
-        } else if (ends_with(o->name, ".capp")) {
-            img = icon_terminal;
-        } else if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano")) {
-            img = icon_file;
-        } else if (o->type == OBJ_DIR) {
-            img = icon_folder;
-        } else if (o->type == OBJ_FILE) {
-            img = icon_file;
         }
+        /* Обычные объекты — иконка по ТИПУ (а не по имени) */
+        else if (o->type == OBJ_APP_TERMINAL) img = icon_terminal;
+        else if (o->type == OBJ_APP_NANO)     img = icon_nano;
+        else if (o->type == OBJ_APP_FILER)    img = icon_filer;
+        else if (o->type == OBJ_APP_TRASH)    img = icon_trash;
+        else if (o->type == OBJ_DIR)          img = icon_folder;
+        else if (o->type == OBJ_FILE)         img = icon_file;
 
         if (!img) continue;
 
@@ -234,6 +243,7 @@ void desktop_icons_draw_to_buffer(uint32_t* buf, int bw, int bh) {
                              ic->x + DESKTOP_ICON_PAD,
                              ic->y);
 
+        /* Подпись: убираем .yrl */
         char label_buf[FS_NAME_LEN];
         const char* label = o->name;
         if (ends_with(o->name, ".yrl")) {
@@ -264,6 +274,9 @@ void desktop_icons_draw_to_buffer(uint32_t* buf, int bw, int bh) {
     }
 }
 
+/* ============================================
+   Перетаскивание и клик
+   ============================================ */
 int desktop_icons_update(int mx, int my, int left_down, int left_prev) {
     int clicked = -1;
 
@@ -313,6 +326,9 @@ int desktop_icons_update(int mx, int my, int left_down, int left_prev) {
     return -1;
 }
 
+/* ============================================
+   Курсор
+   ============================================ */
 uint32_t cursor_backup[CURSOR_H][CURSOR_W];
 int      cursor_backup_x = 0;
 int      cursor_backup_y = 0;

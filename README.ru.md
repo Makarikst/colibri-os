@@ -1,6 +1,6 @@
 [English](README.md) | [Русский](README.ru.md) | [中文](README.zh.md)
 <h1>Colibri OS</h1>
-<h3>v0.9z вышла 27 сентября 2026 года</h3>
+<h3>v1.0 вышла 4 октября 2026 года</h3>
 
 ![Version](https://img.shields.io/badge/version-0.8x-blue)
 ![Status](https://img.shields.io/badge/status-stable-green)

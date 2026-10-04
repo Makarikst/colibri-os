@@ -3,7 +3,7 @@ set -e
 
 GCC=x86_64-elf-gcc
 LD=x86_64-elf-ld
-FLAGS="-m32 -ffreestanding -nostdlib -fno-pic -fno-stack-protector -fno-builtin -Wall -I."
+FLAGS="-m32 -ffreestanding -nostdlib -fno-pic -fno-stack-protector -fno-builtin -Wall -I. -mno-sse -mno-sse2 -mno-mmx -mno-avx -msoft-float"
 
 echo "=== Kernel entry ==="
 $GCC $FLAGS -c kernel_entry.S -o kernel_entry.o
