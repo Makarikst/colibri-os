@@ -250,6 +250,7 @@ static void open_object(FsObject* o, int fs_idx) {
             open_filer_at(fs_idx);
         return;
     }
+    //
 
     /* .txt / .nano — только если Nano работает */
     if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano")) {
