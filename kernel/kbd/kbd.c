@@ -19,18 +19,11 @@ static const char kbd_upper[128] = {
     0, '*', 0, ' '
 };
 
-/* ============================================
-   Состояние
-   ============================================ */
 static int shift_pressed = 0;
 static int ctrl_pressed = 0;
 static int extended = 0;
 
-/* ============================================
-   Инициализация
-   ============================================ */
 void kbd_init(void) {
-    /* Очищаем буфер контроллера клавиатуры */
     while (inb(0x64) & 0x01) {
         inb(0x60);
     }
@@ -39,61 +32,59 @@ void kbd_init(void) {
     extended = 0;
 }
 
-/* ============================================
-   Получить клавишу (блокирующий цикл)
-   ============================================ */
 char kbd_get_key(void) {
-    while (1) {
-        if (inb(0x64) & 0x01) {
-            unsigned char sc = inb(0x60);
+    uint8_t status = inb(0x64);
+    if (!(status & 0x01)) return 0;
+    if (status & 0x20)   return 0;
 
-            /* Extended prefix (0xE0) */
-            if (sc == 0xE0) { extended = 1; continue; }
+    uint8_t sc = inb(0x60);
 
-            /* Release (bit 7) */
-            if (sc & 0x80) {
-                unsigned char r = sc & 0x7F;
-                if (r == 0x2A || r == 0x36) shift_pressed = 0;
-                if (r == 0x1D) ctrl_pressed = 0;
-                extended = 0;
-                continue;
-            }
+    if (sc == 0xE0) { extended = 1; return 0; }
 
-            /* Extended keys */
-            if (extended) {
-                extended = 0;
-                if (sc == 0x48) return KEY_UP;
-                if (sc == 0x50) return KEY_DOWN;
-                if (sc == 0x4B) return KEY_LEFT;
-                if (sc == 0x4D) return KEY_RIGHT;
-                continue;
-            }
-
-            /* Special */
-            if (sc == 0x0F) return KEY_TAB;
-
-            /* Modifiers */
-            if (sc == 0x2A || sc == 0x36) { shift_pressed = 1; continue; }
-            if (sc == 0x1D) { ctrl_pressed = 1; continue; }
-
-            /* Обычные символы */
-            if (sc < 128) {
-                char c = shift_pressed ? kbd_upper[sc] : kbd_lower[sc];
-                if (ctrl_pressed) {
-                    if (c == 'c' || c == 'C') return KEY_CTRL_C;
-                    if (c == 'l' || c == 'L') return KEY_CTRL_L;
-                    if (c == 'd' || c == 'D') return KEY_CTRL_D;
-                    if (c == 'q' || c == 'Q') return KEY_CTRL_Q;
-                    if (c == 's' || c == 'S') return KEY_CTRL_S;
-                }
-                if (c) return c;
-            }
-        }
+    if (sc & 0x80) {
+        unsigned char r = sc & 0x7F;
+        if (r == 0x2A || r == 0x36) shift_pressed = 0;
+        if (r == 0x1D) ctrl_pressed = 0;
+        extended = 0;
+        return 0;
     }
+
+    if (extended) {
+        extended = 0;
+        if (sc == 0x48) return KEY_UP;
+        if (sc == 0x50) return KEY_DOWN;
+        if (sc == 0x4B) return KEY_LEFT;
+        if (sc == 0x4D) return KEY_RIGHT;
+        if (sc == 0x49) return KEY_PAGEUP;
+        if (sc == 0x51) return KEY_PAGEDOWN;
+        return 0;
+    }
+
+    if (sc == 0x0F) return KEY_TAB;
+
+    if (sc == 0x2A || sc == 0x36) { shift_pressed = 1; return 0; }
+    if (sc == 0x1D) { ctrl_pressed = 1; return 0; }
+
+    if (sc < 128) {
+        char c = shift_pressed ? kbd_upper[sc] : kbd_lower[sc];
+        if (ctrl_pressed) {
+            if (c == 'c' || c == 'C') return KEY_CTRL_C;
+            if (c == 'l' || c == 'L') return KEY_CTRL_L;
+            if (c == 'd' || c == 'D') return KEY_CTRL_D;
+            if (c == 'q' || c == 'Q') return KEY_CTRL_Q;
+            if (c == 's' || c == 'S') return KEY_CTRL_S;
+        }
+        return c;
+    }
+
+    return 0;
 }
 
-/* ============================================
-   Состояние модификаторов
-   ============================================ */
 int kbd_shift_pressed(void) { return shift_pressed; }
 int kbd_ctrl_pressed(void)  { return ctrl_pressed; }
+int kbd_has_key(void) {
+    uint8_t status = inb(0x64);
+    if (!(status & 0x01)) return 0;
+    if (status & 0x20)   return 0;
+    return 1;
+}

@@ -38,6 +38,7 @@ void vga_init(void);
 
 /* --- Вывод --- */
 void vga_putchar(char c);
+extern void (*vga_output_target)(char c);
 void vga_print(const char* str);
 void vga_print_color(const char* str, unsigned char col);
 void vga_print_dec(int n);

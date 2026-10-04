@@ -1,4 +1,10 @@
 #include "vga.h"
+/* ============================================
+   Указатель на текущий вывод.
+   Если 0 — пишем в VGA как обычно.
+   Если не 0 — терминал перехватывает вывод.
+   ============================================ */
+void (*vga_output_target)(char c) = 0;
 
 /* ============================================
    Состояние
@@ -108,9 +114,14 @@ static void scroll_buffer_putchar(char c) {
    Публичные функции вывода
    ============================================ */
 void vga_putchar(char c) {
+    if (vga_output_target) {
+        vga_output_target(c);
+        return;
+    }
     scroll_buffer_putchar(c);
     if (scroll_offset == 0) scroll_redraw();
 }
+
 
 void vga_print(const char* str) {
     while (*str) vga_putchar(*str++);
