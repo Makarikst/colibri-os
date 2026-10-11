@@ -18,6 +18,7 @@
 #define WM_TYPE_NANO      2
 #define WM_TYPE_FILER     3
 #define WM_TYPE_GRAPHTOOL 4
+#define WM_TYPE_BROWSER   5    /* ← добавь */
 
 typedef struct {
     int  active;

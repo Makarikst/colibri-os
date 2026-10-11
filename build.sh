@@ -62,6 +62,9 @@ $GCC $FLAGS -c kernel/wm/wm.c -o wm.o
 echo "=== Term ==="
 $GCC $FLAGS -c kernel/term/term.c -o term.o
 
+echo "=== PCI ==="
+$GCC $FLAGS -c kernel/net/pci.c -o pci.o
+
 echo "=== Font ==="
 $GCC $FLAGS -c kernel/framebuffer/font8x16.c -o font8x16.o
 
@@ -71,15 +74,59 @@ $GCC $FLAGS -c kernel/nano_desk/nano_desk.c -o nano_desk.o
 echo "=== Filer ==="
 $GCC $FLAGS -c kernel/filer/filer.c -o filer.o
 
+echo "=== E1000 ==="
+$GCC $FLAGS -c kernel/net/e1000.c -o e1000.o
+
+echo "=== NET ==="
+$GCC $FLAGS -c kernel/net/net.c -o net.o
+
+echo "=== ARP ==="
+$GCC $FLAGS -c kernel/net/arp.c -o arp.o
+
+echo "=== IP ==="
+$GCC $FLAGS -c kernel/net/ip.c -o ip.o
+
+echo "=== ICMP ==="
+$GCC $FLAGS -c kernel/net/icmp.c -o icmp.o
+
+echo "=== TCP ==="
+$GCC $FLAGS -c kernel/net/tcp.c -o tcp.o
+
+echo "=== UDP ==="
+$GCC $FLAGS -c kernel/net/udp.c -o udp.o
+
+echo "=== DNS ==="
+$GCC $FLAGS -c kernel/net/dns.c -o dns.o
+
+echo "=== HTTP ==="
+$GCC $FLAGS -c kernel/net/http.c -o http.o
+
+echo "=== HTML ==="
+$GCC $FLAGS -c kernel/browser/html.c -o html.o
+
+echo "=== HTML JS ==="
+$GCC $FLAGS -c kernel/browser/html_js.c -o html_js.o
+
+echo "=== Browser ==="
+$GCC $FLAGS -c kernel/browser/browser.c -o browser.o
+
+echo "=== CX ==="
+$GCC $FLAGS -c kernel/cx/cx.c -o cx.o
+
 echo "=== Link ==="
 $LD -m elf_i386 -T linker.ld -o colibri.cos \
     --start-group \
-    kernel_entry.o kernel.o vga.o kbd.o utils.o kmalloc.o framebuffer.o menupkm.o startmenu.o graphtool.o \
-    font8x16.o fs.o commands.o nano.o cpe.o shell.o desktop.o mouse.o wm.o term.o filer.o nano_desk.o \
+    kernel_entry.o kernel.o vga.o kbd.o utils.o kmalloc.o framebuffer.o \
+    menupkm.o startmenu.o graphtool.o pci.o \
+    font8x16.o fs.o commands.o nano.o cpe.o shell.o desktop.o mouse.o wm.o \
+    term.o filer.o nano_desk.o \
+    e1000.o net.o arp.o ip.o icmp.o tcp.o udp.o dns.o http.o \
+    html.o html_js.o browser.o cx.o \
     --end-group
 
 echo "colibri.cos:"
 ls -l colibri.cos
 
 echo "=== Run ==="
-qemu-system-i386 -kernel colibri.cos -m 64M -vga std
+qemu-system-i386 -kernel colibri.cos -m 64M -vga std \
+    -netdev user,id=n0 -device e1000,netdev=n0

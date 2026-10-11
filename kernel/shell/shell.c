@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "../nano/nano.h"
 #include "../cpe/cpe.h"
+#include "../commands//commands.h"
 
 /* ============================================
    История команд
@@ -221,7 +222,12 @@ void shell_execute(char* line) {
        Net
        ============================================ */
     else if (strcmp(cmd, "ifconfig") == 0) cmd_ifconfig();
-    else if (strcmp(cmd, "ping") == 0)   { if (n > 1) cmd_ping(tokens[1]); else vga_print("Usage: ping <host>\n"); }
+    else if (strcmp(cmd, "ping") == 0)     { if (n > 1) cmd_ping(tokens[1]); else vga_print("Usage: ping <ip>\n"); }
+    else if (strcmp(cmd, "arp") == 0)      cmd_arp();
+    else if (strcmp(cmd, "dns") == 0)      { if (n > 1) cmd_dns(tokens[1]); else vga_print("Usage: dns <host>\n"); }
+    else if (strcmp(cmd, "wget") == 0)     { if (n > 1) cmd_wget(tokens[1]); else vga_print("Usage: wget <url>\n"); }
+    else if (strcmp(cmd, "netstat") == 0)  cmd_netstat();
+    else if (strcmp(cmd, "cxtest") == 0) cmd_cxtest("int x = 5; str s = \"hi\"; if (x > 0) { return 42; }");
 
     /* ============================================
        Env / Alias

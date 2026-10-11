@@ -17,6 +17,10 @@
 #include "kernel/nano_desk/nano_desk.h"
 #include "kernel/startmenu/startmenu.h"
 #include "kernel/graphtool/graphtool.h"
+#include "kernel/net/pci.h"
+#include "kernel/net/e1000.h"
+#include "kernel/net/net.h"
+#include "kernel/browser/browser.h"
 
 static uint32_t frame_buffer[1024 * 768];
 static uint32_t desktop_backup[1024 * 768];
@@ -127,6 +131,18 @@ static void open_graphtool(int fs_index) {
     graphtool.buf_h = 768;
 }
 
+static void open_browser(void) {
+    if (browser.open) return;
+    int win = wm_create(120, 80, 760, 580, WM_TYPE_BROWSER, "Browser");
+    if (win < 0) return;
+
+    browser.buf   = frame_buffer;
+    browser.buf_w = 1024;
+    browser.buf_h = 768;
+
+    browser_open(win, 120, 80, 760, 580);
+}
+
 static void open_filer_at(int dir_index) {
     open_filer();
     filer.current_dir = dir_index;
@@ -134,10 +150,7 @@ static void open_filer_at(int dir_index) {
 }
 
 /* ============================================
-   Проверка, работает ли приложение (по магии CAPP)
-   ============================================ */
-/* ============================================
-   Проверка, работает ли приложение (по магии CAPP)
+   app_is_working — как было
    ============================================ */
 static int app_is_working(const char* base_name) {
     int colibri = -1, users = -1, alpha = -1, apps = -1;
@@ -175,13 +188,9 @@ static int app_is_working(const char* base_name) {
     return 0;
 }
 
-/* ============================================
-   Открыть объект
-   ============================================ */
 static void open_object(FsObject* o, int fs_idx) {
     if (!o) return;
 
-    /* Ярлык .yrl — идём к цели по target_id */
     if (ends_with(o->name, ".yrl")) {
         int target = o->target_id;
         if (target < 0 || target >= FS_MAX_OBJECTS) return;
@@ -191,7 +200,6 @@ static void open_object(FsObject* o, int fs_idx) {
         return;
     }
 
-    /* .capp — только если приложение рабочее */
     if (ends_with(o->name, ".capp")) {
         if (app_is_working("Terminal") && starts_with(o->name, "Terminal"))
             open_terminal();
@@ -201,24 +209,23 @@ static void open_object(FsObject* o, int fs_idx) {
             open_nano(-1);
         else if (app_is_working("GraphTool") && starts_with(o->name, "GraphTool"))
             open_graphtool(-1);
+        else if (app_is_working("Browser") && starts_with(o->name, "Browser"))
+            open_browser();
         return;
     }
 
-    /* Картинки .png / .jpg — в GraphTool, если он рабочий */
     if (ends_with(o->name, ".png") || ends_with(o->name, ".jpg")) {
         if (app_is_working("GraphTool"))
             open_graphtool(fs_idx);
         return;
     }
 
-    /* Папка — только если Filer работает */
     if (o->type == OBJ_DIR) {
         if (app_is_working("Filer"))
             open_filer_at(fs_idx);
         return;
     }
 
-    /* .txt / .nano — только если Nano работает */
     if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano")) {
         if (app_is_working("Nano"))
             open_nano(fs_idx);
@@ -231,6 +238,7 @@ static void window_content_cb(int type, int wx, int wy, int ww, int wh) {
     else if (type == WM_TYPE_FILER) filer_render_for_window(wx, wy, ww, wh);
     else if (type == WM_TYPE_NANO)  nano_desk_render_for_window(wx, wy, ww, wh);
     else if (type == WM_TYPE_GRAPHTOOL) graphtool_render_for_window(wx, wy, ww, wh);
+    else if (type == WM_TYPE_BROWSER)   browser_render_for_window(wx, wy, ww, wh);
 }
 
 static int icon_hit_test(int mx, int my) {
@@ -281,6 +289,39 @@ void kernel_main(void) {
     fs_init();
     srand(12345);
 
+    pci_init();
+
+    if (g_net_found) {
+        /* Включаем Bus Master + Memory Space в PCI Command Register.
+           Без Bus Master E1000 не может DMA-ить! */
+        uint32_t pci_cmd = pci_read32(g_net_device.bus, g_net_device.slot,
+                                      g_net_device.func, 0x04);
+        vga_print("[PCI] CMD before=0x");
+        vga_print_hex32(pci_cmd);
+        vga_putchar('\n');
+
+        pci_cmd |= 0x06;   /* бит 1 = Memory Space, бит 2 = Bus Master */
+        pci_write32(g_net_device.bus, g_net_device.slot,
+                    g_net_device.func, 0x04, pci_cmd);
+
+        uint32_t pci_cmd2 = pci_read32(g_net_device.bus, g_net_device.slot,
+                                       g_net_device.func, 0x04);
+        vga_print("[PCI] CMD after=0x");
+        vga_print_hex32(pci_cmd2);
+        vga_putchar('\n');
+
+        if (e1000_init(g_net_device.bar0)) {
+            net_init();
+        } else {
+            vga_print_color("NET: E1000 init failed\n", VGA_LIGHT_RED);
+        }
+    }
+
+    /* Пауза для отладки — убери после проверки */
+    vga_print("\n=== PRESS ANY KEY TO START GUI ===\n");
+    while (!kbd_has_key()) { }
+    kbd_get_key();
+
     fb_init_bochs();
     mouse_init();
     wm_init();
@@ -302,6 +343,7 @@ void kernel_main(void) {
     filer_init(&filer);
     nano_desk_init();
     graphtool_init();
+    browser_init();
 
     desktop_scan_files();
 
@@ -314,7 +356,17 @@ void kernel_main(void) {
     int prev_left = mouse.left, prev_right = mouse.right;
 
     while (1) {
-        mouse_poll();
+        net_poll();
+
+        /* Сначала обрабатываем клавиатуру, потом мышь.
+           Иначе mouse_poll украдёт байты клавы. */
+        if (!kbd_has_key()) {
+            mouse_poll();
+        } else {
+            /* Клава занята — мышь ждёт */
+        }
+
+        /* ... дальше обработка клавиш (while kbd_has_key) — как было ... */
 
         int left  = mouse.left;
         int right = mouse.right;
@@ -324,8 +376,8 @@ void kernel_main(void) {
         int menu_action_changed = 0;
         int startmenu_changed = 0;
         int graphtool_changed = 0;
+        int browser_changed = 0;
 
-        /* Меню Пуск */
         if (g_start_menu.open) {
             int sel = startmenu_update(&g_start_menu, mouse.x, mouse.y, left, prev_left);
             if (sel > 0) {
@@ -351,7 +403,6 @@ void kernel_main(void) {
             }
         }
 
-        /* Скролл терминала */
         if (mouse.wheel != 0 && term.open) {
             Window* tw = wm_get(term.win_idx);
             if (tw && tw->active &&
@@ -363,7 +414,17 @@ void kernel_main(void) {
             mouse.wheel = 0;
         }
 
-        /* Графический редактор — рисование */
+        if (mouse.wheel != 0 && browser.open) {
+            Window* bw = wm_get(browser.win_idx);
+            if (bw && bw->active &&
+                mouse.x >= bw->x && mouse.x < bw->x + bw->w &&
+                mouse.y >= bw->y && mouse.y < bw->y + bw->h) {
+                html_scroll(&browser.doc, mouse.wheel);
+                browser_changed = 1;
+            }
+            mouse.wheel = 0;
+        }
+
         if (graphtool.open && !g_menu.open && !g_start_menu.open) {
             Window* gw = wm_get(graphtool.win_idx);
             if (gw && gw->active &&
@@ -374,7 +435,16 @@ void kernel_main(void) {
             }
         }
 
-        /* Клавиатура */
+        if (browser.open && !g_menu.open && !g_start_menu.open) {
+            Window* bw = wm_get(browser.win_idx);
+            if (bw && bw->active &&
+                mouse.x >= bw->x && mouse.x < bw->x + bw->w &&
+                mouse.y >= bw->y && mouse.y < bw->y + bw->h) {
+                if (browser_handle_click(mouse.x, mouse.y, left, prev_left))
+                    browser_changed = 1;
+            }
+        }
+
         while (kbd_has_key()) {
             char k = kbd_get_key();
             if (k == 0) continue;
@@ -399,11 +469,19 @@ void kernel_main(void) {
                 continue;
             }
 
+            if (browser.open && (browser.url_focus || browser.doc.active_input >= 0)) {
+                if (browser_handle_key(k)) browser_changed = 1;
+                continue;
+            }
+
             if (nano.open) nano_desk_handle_key(k);
             else if (term.open) {
                 if (k == KEY_UP)   { term_scroll(&term, +1); term_scrolled = 1; }
                 else if (k == KEY_DOWN) { term_scroll(&term, -1); term_scrolled = 1; }
                 else term_handle_key(&term, k);
+            }
+            else if (browser.open) {
+                if (browser_handle_key(k)) browser_changed = 1;
             }
         }
 
@@ -508,13 +586,18 @@ void kernel_main(void) {
             Window* w = wm_get(graphtool.win_idx);
             if (!w || !w->active) { graphtool_save(); graphtool_close(); wm_changed = 1; }
         }
+        if (browser.open && browser.win_idx >= 0) {
+            Window* w = wm_get(browser.win_idx);
+            if (!w || !w->active) { browser_close(); wm_changed = 1; }
+        }
 
         int mouse_moved     = (mouse.x != prev_x || mouse.y != prev_y);
         int buttons_changed = (left != prev_left || right != prev_right);
 
         int need_full = (key_pressed || menu_action_changed ||
                          icon_action_changed || wm_changed || filer_changed ||
-                         term_scrolled || startmenu_changed || graphtool_changed);
+                         term_scrolled || startmenu_changed || graphtool_changed ||
+                         browser_changed);
 
         if (need_full) {
             full_redraw(&g_menu, &g_start_menu);

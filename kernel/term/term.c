@@ -254,6 +254,11 @@ void term_render_for_window(int win_x, int win_y, int win_w, int win_h) {
     term_render(&term);
 }
 
+void term_deactivate(void) {
+    active_term = 0;
+    vga_output_target = 0;
+}
+
 /* ============================================
    Обработка клавиш
    ============================================ */

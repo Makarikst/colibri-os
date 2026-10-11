@@ -1,5 +1,11 @@
 #include "commands.h"
 #include "../shell/shell.h"
+#include "../net/net.h"
+#include "../net/arp.h"
+#include "../net/icmp.h"
+#include "../net/dns.h"
+#include "../net/http.h"
+#include "../cx/cx.h"
 
 /* ============================================
    Env
@@ -63,7 +69,6 @@ static void alias_unset(const char* name) {
     }
 }
 
-/* Публичные обёртки для shell.c */
 const char* commands_alias_get(const char* name) { return alias_get(name); }
 void commands_env_show(void) { cmd_env(); }
 void commands_alias_show(void) { cmd_alias_list(); }
@@ -102,15 +107,12 @@ static int proc_kill(int pid) {
    Net (stub)
    ============================================ */
 static int net_up = 0;
-static const char* net_ip   = "10.0.2.15";
-static const char* net_mask = "255.255.255.0";
-static const char* net_gw   = "10.0.2.2";
+static const char* net_ip_s   = "10.0.2.15";
+static const char* net_mask_s = "255.255.255.0";
+static const char* net_gw_s   = "10.0.2.2";
 
-/* ============================================
-   Parser helpers (нужны для tokenize)
-   ============================================ */
 static char expr_buf[256];
-static char* expr_buf_ptr = expr_buf;   /* используется в cmd_calc */
+
 /* ============================================
    System
    ============================================ */
@@ -176,9 +178,12 @@ void cmd_help(void) {
     vga_print("  ps            - list processes\n");
     vga_print("  spawn <name>  - spawn process\n");
     vga_print("  kill <pid>    - kill process\n");
-    vga_print_color("--- Net (stub) ---\n", VGA_YELLOW);
+    vga_print_color("--- Net ---\n", VGA_YELLOW);
     vga_print("  ifconfig      - show interfaces\n");
-    vga_print("  ping <host>   - ping host\n");
+    vga_print("  ping <ip>     - ping host\n");
+    vga_print("  arp           - show ARP cache\n");
+    vga_print("  dns <host>    - resolve hostname\n");
+    vga_print("  wget <url>    - HTTP GET, print body\n");
     vga_print_color("--- Env / Alias ---\n", VGA_YELLOW);
     vga_print("  env           - show vars\n");
     vga_print("  setenv K=V    - set var\n");
@@ -190,9 +195,7 @@ void cmd_help(void) {
 }
 
 void cmd_ver(void) { vga_print("Colibri OS v0.9 (full, with utils)\n"); }
-
 void cmd_banner(void) { vga_banner(); }
-
 void cmd_clear(void) { vga_clear(); vga_banner(); }
 
 void cmd_pwd_no_newline(void) {
@@ -237,7 +240,7 @@ void cmd_uptime(void) {
 }
 
 void cmd_mem(void) {
-    vga_print("Heap start: "); vga_print_hex32(0x200000);
+    vga_print("Heap start: "); vga_print_hex32(0x400000);
     vga_print("\nHeap size:  1048576 bytes\n");
     vga_print("VGA:        text mode 80x25 @ 0xB8000\n");
 }
@@ -287,6 +290,7 @@ void cmd_shutdown(void) {
     cpu_cli();
     while (1) cpu_halt();
 }
+
 /* ============================================
    Files
    ============================================ */
@@ -537,10 +541,10 @@ void cmd_trunc(const char* name) {
 
 void cmd_write(const char* name, const char* text)  { cmd_echo_redirect(text, name, 0); }
 void cmd_append(const char* name, const char* text) { cmd_echo_redirect(text, name, 1); }
+
 /* ============================================
    Math
    ============================================ */
-/* Калькулятор: переписан из kernel.c. Использует рекурсивный парсер */
 static int calc_parse_primary(const char** p, int* ok);
 static int calc_parse_power(const char** p, int* ok);
 static int calc_parse_term(const char** p, int* ok);
@@ -769,15 +773,137 @@ void cmd_kill(const char* arg) {
    ============================================ */
 void cmd_ifconfig(void) {
     vga_print("eth0: ");
-    vga_print(net_up ? "UP" : "DOWN");
+    vga_print(net_up ? "UP" : "UP (link)");
     vga_putchar('\n');
-    vga_print("  ip:   "); vga_print(net_ip); vga_putchar('\n');
-    vga_print("  mask: "); vga_print(net_mask); vga_putchar('\n');
-    vga_print("  gw:   "); vga_print(net_gw); vga_putchar('\n');
+    vga_print("  ip:   "); vga_print(net_ip_s); vga_putchar('\n');
+    vga_print("  mask: "); vga_print(net_mask_s); vga_putchar('\n');
+    vga_print("  gw:   "); vga_print(net_gw_s); vga_putchar('\n');
+    vga_print("  mac:  ");
+    uint8_t mac[6];
+    net_get_mac(mac);
+    char hex[] = "0123456789abcdef";
+    for (int i = 0; i < 6; i++) {
+        vga_putchar(hex[mac[i] >> 4]);
+        vga_putchar(hex[mac[i] & 0xF]);
+        if (i < 5) vga_putchar(':');
+    }
+    vga_putchar('\n');
 }
 
 void cmd_ping(const char* host) {
+    int a=0, b=0, c=0, d=0, i=0;
+    while (host[i] >= '0' && host[i] <= '9') a = a*10 + (host[i++]-'0');
+    if (host[i++] != '.') { vga_print("Usage: ping a.b.c.d\n"); return; }
+    while (host[i] >= '0' && host[i] <= '9') b = b*10 + (host[i++]-'0');
+    if (host[i++] != '.') { vga_print("Usage: ping a.b.c.d\n"); return; }
+    while (host[i] >= '0' && host[i] <= '9') c = c*10 + (host[i++]-'0');
+    if (host[i++] != '.') { vga_print("Usage: ping a.b.c.d\n"); return; }
+    while (host[i] >= '0' && host[i] <= '9') d = d*10 + (host[i++]-'0');
+
+    uint32_t ip = ((uint32_t)a << 24) | ((uint32_t)b << 16) |
+                  ((uint32_t)c << 8)  |  (uint32_t)d;
+
     vga_print("PING ");
     vga_print(host);
-    vga_print(" (stub): 4 packets, 0% loss\n");
+    vga_print("...\n");
+
+    arp_request(ip);
+    for (int t = 0; t < 50; t++) {
+        for (volatile int k = 0; k < 3000000; k++) { }
+        net_poll();
+        uint8_t mac[6];
+        if (arp_lookup(ip, mac)) break;
+    }
+
+    for (int seq = 1; seq <= 3; seq++) {
+        icmp_ping(ip, 0x1234, seq);
+        for (int t = 0; t < 50; t++) {
+            for (volatile int k = 0; k < 3000000; k++) { }
+            net_poll();
+        }
+    }
+}
+
+void cmd_arp(void) { arp_dump(); }
+
+void cmd_dns(const char* host) {
+    uint32_t ip = 0;
+
+    /* Сначала — ARP до DNS-сервера 10.0.2.3 */
+    {
+        uint8_t mac[6];
+        if (!arp_lookup(NET_DNS, mac)) {
+            arp_request(NET_DNS);
+            for (int t = 0; t < 50; t++) {
+                for (volatile int k = 0; k < 3000000; k++) { }
+                net_poll();
+                if (arp_lookup(NET_DNS, mac)) break;
+            }
+        }
+    }
+
+    if (!dns_resolve(host, &ip)) {
+        vga_print_color("dns: busy\n", VGA_LIGHT_RED);
+        return;
+    }
+    for (int t = 0; t < 100; t++) {
+        for (volatile int k = 0; k < 3000000; k++) { }
+        net_poll();
+        uint32_t r = dns_get_last();
+        if (r != 0) { ip = r; break; }
+    }
+    if (ip == 0) {
+        vga_print_color("dns: timeout\n", VGA_LIGHT_RED);
+    }
+}
+
+void cmd_wget(const char* url) {
+    uint32_t len = 0;
+    char* body = http_get(url, &len);
+    if (!body) {
+        vga_print_color("wget: failed\n", VGA_LIGHT_RED);
+        return;
+    }
+    vga_print_color("--- response body (", VGA_LIGHT_CYAN);
+    vga_print_dec(len);
+    vga_print_color(" bytes) ---\n", VGA_LIGHT_CYAN);
+    vga_print(body);
+    if (len == 0 || body[len-1] != '\n') vga_putchar('\n');
+    vga_print_color("--- end ---\n", VGA_LIGHT_CYAN);
+    kfree(body);
+}
+
+void cmd_netstat(void) {
+    extern uint32_t e1000_tx_count(void);
+    extern uint32_t e1000_rx_count(void);
+    vga_print("E1000 stats:\n");
+    vga_print("  TX packets: ");
+    vga_print_dec(e1000_tx_count());
+    vga_putchar('\n');
+    vga_print("  RX packets: ");
+    vga_print_dec(e1000_rx_count());
+    vga_putchar('\n');
+}
+
+void cmd_cxtest(const char* code) {
+    Lexer lex;
+    cx_lexer_init(&lex, code);
+
+    while (1) {
+        Token t = cx_lexer_next(&lex);
+        if (t.type == 0) break;   /* TOK_EOF */
+
+        vga_print(cx_token_name(&t));
+        vga_putchar(' ');
+
+        if (t.type == 3) {         /* TOK_IDENT */
+            vga_print("'"); vga_print(t.str_val); vga_print("'");
+        } else if (t.type == 2) {  /* TOK_STR_LIT */
+            vga_print("\""); vga_print(t.str_val); vga_print("\"");
+        } else if (t.type == 1) {  /* TOK_INT_LIT */
+            vga_print_dec(t.int_val);
+        }
+        vga_print("  ");
+    }
+    vga_putchar('\n');
 }

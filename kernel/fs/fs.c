@@ -90,6 +90,12 @@ void fs_init(void) {
         if (graph_app < 0)
             graph_app = fs_create_in(apps_idx, "GraphTool.capp", OBJ_APP_GRAPHTOOL);
     }
+    int browser_app = -1;
+    if (apps_idx >= 0) {
+        browser_app = fs_find_in(apps_idx, "Browser.capp");
+        if (browser_app < 0)
+            browser_app = fs_create_in(apps_idx, "Browser.capp", OBJ_APP_BROWSER);
+    }
 
     if (desktop_idx >= 0) {
         if (fs_find_in(desktop_idx, "Terminal.yrl") < 0) {
@@ -113,6 +119,11 @@ void fs_init(void) {
             int l = fs_create_in(desktop_idx, "Trash.yrl", OBJ_LINK);
             if (l >= 0) fs_objects[l].target_id = trash_idx;
         }
+        if (fs_find_in(desktop_idx, "Browser.yrl") < 0) {
+            int l = fs_create_in(desktop_idx, "Browser.yrl", OBJ_LINK);
+            if (l >= 0) fs_objects[l].target_id = browser_app;
+        }
+
     }
 
     /* Байт-код для приложений */
@@ -120,11 +131,13 @@ void fs_init(void) {
     static const unsigned char code_nano[]     = { 0x11, 0xFF };
     static const unsigned char code_filer[]    = { 0x12, 0xFF };
     static const unsigned char code_graph[] = { 0x13, 0xFF };
+    static const unsigned char code_browser[] = { 0x14, 0xFF };
 
     pack_capp(term_app,  code_terminal, sizeof(code_terminal));
     pack_capp(nano_app,  code_nano,     sizeof(code_nano));
     pack_capp(filer_app, code_filer,    sizeof(code_filer));
     pack_capp(graph_app, code_graph, sizeof(code_graph));
+    pack_capp(browser_app, code_browser, sizeof(code_browser));
 
     /* Содержимое .yrl — ID цели */
     for (int i = 0; i < FS_MAX_OBJECTS; i++) {

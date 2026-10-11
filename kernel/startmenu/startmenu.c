@@ -157,6 +157,8 @@ void startmenu_draw(StartMenu* m, uint32_t* buf, int bw, int bh) {
             if (starts_with(o->name, "Terminal"))     img = icon_terminal;
             else if (starts_with(o->name, "Filer"))   img = icon_filer;
             else if (starts_with(o->name, "Nano"))    img = icon_nano;
+            else if (starts_with(o->name, "GraphTool")) img = icon_graphtool;
+            else if (starts_with(o->name, "Browser")) img = icon_browser;
         }
 
         if (img) {

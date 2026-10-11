@@ -50,7 +50,6 @@ void cmd_stat(const char* name);
 void cmd_wc(const char* name);
 void cmd_head(const char* name);
 void cmd_tail(const char* name);
-/* --- Публичные обёртки для shell.c --- */
 const char* commands_alias_get(const char* name);
 void commands_env_show(void);
 void commands_alias_show(void);
@@ -80,9 +79,12 @@ void cmd_ps(void);
 void cmd_spawn(const char* name);
 void cmd_kill(const char* arg);
 
-/* --- Net (stub) --- */
+/* --- Net --- */
 void cmd_ifconfig(void);
 void cmd_ping(const char* host);
+void cmd_arp(void);
+void cmd_dns(const char* host);
+void cmd_wget(const char* url);
 
 /* --- Env / Alias --- */
 void cmd_env(void);
@@ -94,5 +96,8 @@ void cmd_unalias(const char* name);
 
 /* --- Вспомогательные --- */
 void cmd_pwd_no_newline(void);
+
+void cmd_netstat(void);
+void cmd_cxtest(const char* code);   /* ← НОВАЯ СТРОКА */
 
 #endif

@@ -42,6 +42,7 @@ void term_putchar(Terminal* t, char c);
 void term_clear(Terminal* t);
 void term_render(Terminal* t);
 void term_handle_key(Terminal* t, char key);
+void term_deactivate(void);
 
 void term_scroll(Terminal* t, int delta);
 

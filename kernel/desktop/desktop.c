@@ -228,6 +228,7 @@ void desktop_icons_draw_to_buffer(uint32_t* buf, int bw, int bh) {
                     case OBJ_APP_GRAPHTOOL: img = icon_graphtool; break;
                     case OBJ_DIR:           img = icon_folder;    break;
                     case OBJ_FILE:          img = icon_file;      break;
+                    case OBJ_APP_BROWSER:   img = icon_browser;   break;
                 }
             }
         }
@@ -245,6 +246,7 @@ void desktop_icons_draw_to_buffer(uint32_t* buf, int bw, int bh) {
         else if (o->type == OBJ_APP_FILER)     img = icon_filer;
         else if (o->type == OBJ_APP_TRASH)     img = icon_trash;
         else if (o->type == OBJ_APP_GRAPHTOOL) img = icon_graphtool;
+        else if (ends_with(o->name, ".capp")) img = icon_terminal;
 
         if (!img) continue;
 
