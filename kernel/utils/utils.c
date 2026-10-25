@@ -9,6 +9,18 @@ void memcpy(void* dst, const void* src, uint32_t n) {
     while (n--) *d++ = *s++;
 }
 
+uint32_t utf8_next(const char** sp) {
+    const unsigned char* s = (const unsigned char*)*sp;
+    uint32_t cp;
+    if (s[0] < 0x80) { cp = s[0]; *sp += 1; }
+    else if ((s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+        cp = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F); *sp += 2;
+    } else if ((s[0] & 0xF0) == 0xE0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+        cp = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F); *sp += 3;
+    } else { cp = '?'; *sp += 1; }   /* invalid / 4-byte */
+    return cp;
+}
+
 void memset(void* dst, uint8_t val, uint32_t n) {
     uint8_t* d = (uint8_t*) dst;
     while (n--) *d++ = val;
@@ -233,14 +245,17 @@ static int bcd_to_bin(uint8_t bcd) {
     return ((bcd >> 4) * 10) + (bcd & 0x0F);
 }
 
-static uint8_t rtc_read(uint8_t reg) {
+uint8_t rtc_read(uint8_t reg) {
     outb(0x70, 0x80 | reg);   /* NMI off */
     return inb(0x71);
 }
 
+static uint8_t bin_to_bcd(int val) {
+    return (uint8_t)(((val / 10) << 4) | (val % 10));
+}
+
 rtc_time_t rtc_get_time(void) {
     rtc_time_t t;
-
     while (rtc_read(0x0A) & 0x80) { }
 
     t.sec  = bcd_to_bin(rtc_read(0x00));
@@ -250,7 +265,6 @@ rtc_time_t rtc_get_time(void) {
     t.mon  = bcd_to_bin(rtc_read(0x08));
     t.year = 2000 + bcd_to_bin(rtc_read(0x09));
 
-    /* Санити-чек */
     if (t.sec  > 59) t.sec  = 0;
     if (t.min  > 59) t.min  = 0;
     if (t.hour > 23) t.hour = 0;
@@ -259,6 +273,25 @@ rtc_time_t rtc_get_time(void) {
     if (t.year < 2000 || t.year > 2100) t.year = 2026;
 
     return t;
+}
+
+void rtc_set_time(rtc_time_t t) {
+    while (rtc_read(0x0A) & 0x80) { }
+
+    outb(0x70, 0x8B);
+    uint8_t regB = inb(0x71);
+    outb(0x70, 0x8B);
+    outb(0x71, regB | 0x80);
+
+    outb(0x70, 0x00); outb(0x71, bin_to_bcd(t.sec));
+    outb(0x70, 0x02); outb(0x71, bin_to_bcd(t.min));
+    outb(0x70, 0x04); outb(0x71, bin_to_bcd(t.hour));
+    outb(0x70, 0x07); outb(0x71, bin_to_bcd(t.day));
+    outb(0x70, 0x08); outb(0x71, bin_to_bcd(t.mon));
+    outb(0x70, 0x09); outb(0x71, bin_to_bcd(t.year - 2000));
+
+    outb(0x70, 0x8B);
+    outb(0x71, regB & ~0x80);
 }
 
 uint32_t rtc_get_unix(void) {

@@ -886,24 +886,14 @@ void cmd_netstat(void) {
 }
 
 void cmd_cxtest(const char* code) {
-    Lexer lex;
-    cx_lexer_init(&lex, code);
-
-    while (1) {
-        Token t = cx_lexer_next(&lex);
-        if (t.type == 0) break;   /* TOK_EOF */
-
-        vga_print(cx_token_name(&t));
-        vga_putchar(' ');
-
-        if (t.type == 3) {         /* TOK_IDENT */
-            vga_print("'"); vga_print(t.str_val); vga_print("'");
-        } else if (t.type == 2) {  /* TOK_STR_LIT */
-            vga_print("\""); vga_print(t.str_val); vga_print("\"");
-        } else if (t.type == 1) {  /* TOK_INT_LIT */
-            vga_print_dec(t.int_val);
-        }
-        vga_print("  ");
-    }
+    vga_print_color("=== Cx Test ===\n", VGA_LIGHT_CYAN);
+    vga_print("Source: ");
+    vga_print(code);
     vga_putchar('\n');
+    vga_print_color("--- Output ---\n", VGA_YELLOW);
+
+    // Просто запускаем интерпретатор (он сам найдет label и textview)
+    cx_run_code(code);
+
+    vga_print_color("--- End ---\n", VGA_YELLOW);
 }

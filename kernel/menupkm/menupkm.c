@@ -119,28 +119,11 @@ void menu_draw(ContextMenu* m, uint32_t* buf, int bw, int bh) {
     }
 
     /* Пункты — рисуем символы через font8x16 */
+    /* Пункты — текст через fb_print_to_buffer (UTF-8) */
     for (int i = 0; i < m->count; i++) {
-        int iy = m->y + i * MENU_ITEM_H;
-        const char* s = m->labels[i];
+        if (!m->labels[i]) continue;
         int tx = m->x + MENU_TEXT_PAD_X;
-        int ty = iy + MENU_TEXT_PAD_Y;
-
-        int cx = tx;
-        while (s && *s) {
-            unsigned char ch = (unsigned char)*s;
-            for (int row = 0; row < 16; row++) {
-                unsigned char bits = font8x16[ch][row];
-                for (int col = 0; col < 8; col++) {
-                    uint32_t color = (bits & (0x80 >> col)) ? MENU_TEXT : MENU_BG;
-                    int px = cx + col;
-                    int py = ty + row;
-                    if (px < 0 || px >= bw) continue;
-                    if (py < 0 || py >= bh) continue;
-                    buf[py * bw + px] = color;
-                }
-            }
-            cx += 8;
-            s++;
-        }
+        int ty = m->y + i * MENU_ITEM_H + MENU_TEXT_PAD_Y;
+        fb_print_to_buffer(buf, bw, bh, m->labels[i], tx, ty, MENU_TEXT, MENU_BG);
     }
 }

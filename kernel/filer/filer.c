@@ -137,7 +137,6 @@ void filer_start_rename(Filer* f) {
 int filer_handle_key(Filer* f, char key) {
     if (!f->open || !f->rename_mode) return 0;
 
-    /* Enter — подтвердить */
     if (key == '\n') {
         if (f->rename_len > 0 && f->rename_row >= 0 &&
             f->rename_row < f->item_count) {
@@ -146,46 +145,12 @@ int filer_handle_key(Filer* f, char key) {
             if (o) {
                 int exists = fs_find_in(o->parent, f->rename_buf);
                 if (exists < 0 || exists == idx) {
-                    /* Переписываем имя */
                     int i = 0;
                     while (f->rename_buf[i] && i < FS_NAME_LEN - 1) {
                         o->name[i] = f->rename_buf[i];
                         i++;
                     }
                     o->name[i] = 0;
-
-                    /* ============================================
-                       СМЕНА ТИПА ПО РАСШИРЕНИЮ
-                       ============================================ */
-                    int new_is_capp = ends_with(o->name, ".capp");
-                    int new_is_txt  = ends_with(o->name, ".txt") ||
-                                      ends_with(o->name, ".nano");
-                    int new_is_yrl  = ends_with(o->name, ".yrl");
-
-                    if (new_is_capp) {
-                        /* Вернуть исходный тип приложения (если был) */
-                        if (o->saved_type != -1)
-                            o->type = o->saved_type;
-                        else if (o->type != OBJ_DIR &&
-                                 o->type != OBJ_FILE)
-                            o->type = OBJ_FILE;
-                    }
-                    else if (new_is_txt || new_is_yrl) {
-                        /* Запомнить текущий тип, если это приложение */
-                        if (o->type == OBJ_APP_TERMINAL || o->type == OBJ_APP_NANO ||
-                            o->type == OBJ_APP_FILER    || o->type == OBJ_APP_TRASH) {
-                            o->saved_type = o->type;
-                        }
-                        o->type = OBJ_FILE;
-                    }
-                    else {
-                        /* Неизвестное расширение → обычный файл */
-                        if (o->type == OBJ_APP_TERMINAL || o->type == OBJ_APP_NANO ||
-                            o->type == OBJ_APP_FILER    || o->type == OBJ_APP_TRASH) {
-                            o->saved_type = o->type;
-                        }
-                        o->type = OBJ_FILE;
-                    }
                 }
             }
         }
@@ -196,7 +161,6 @@ int filer_handle_key(Filer* f, char key) {
         return 1;
     }
 
-    /* Esc — отменить */
     if (key == KEY_ESC) {
         f->rename_mode = 0;
         f->rename_row = -1;
@@ -205,7 +169,6 @@ int filer_handle_key(Filer* f, char key) {
         return 1;
     }
 
-    /* Backspace */
     if (key == '\b') {
         if (f->rename_len > 0) {
             f->rename_len--;
@@ -214,7 +177,6 @@ int filer_handle_key(Filer* f, char key) {
         return 1;
     }
 
-    /* Обычный символ */
     if ((unsigned char)key >= 32 && (unsigned char)key < 127) {
         if (f->rename_len < FS_NAME_LEN - 1) {
             f->rename_buf[f->rename_len++] = key;
@@ -227,7 +189,7 @@ int filer_handle_key(Filer* f, char key) {
 }
 
 /* ============================================
-   Enter — открыть папку / файл
+   Enter — открыть папку / файл (ИСПРАВЛЕНО)
    ============================================ */
 int filer_handle_enter(Filer* f) {
     if (!f->open) return 0;
@@ -238,16 +200,18 @@ int filer_handle_enter(Filer* f) {
     FsObject* o = fs_get(idx);
     if (!o) return 0;
 
+    // 1. Если это папка — заходим в неё (ПЕРВЫМ ДЕЛОМ)
     if (o->type == OBJ_DIR) {
         f->current_dir = idx;
         filer_reload(f);
         return 1;
     }
 
+    // 2. Если это файл
     if (o->type == OBJ_FILE) {
         if (ends_with(o->name, ".txt") || ends_with(o->name, ".nano"))
-            return 2;
-        return 3;
+            return 2; // Открыть в Nano
+        return 3; // Другое (например, картинка)
     }
 
     return 0;
@@ -267,7 +231,7 @@ int filer_handle_click(Filer* f, int mx, int my) {
         return 1;
     }
 
-    /* Кнопка Up */
+    // Кнопка Up
     if (mx >= f->up_btn_x && mx < f->up_btn_x + f->up_btn_w &&
         my >= f->up_btn_y && my < f->up_btn_y + f->up_btn_h) {
         if (f->current_dir != ROOT_INDEX) {

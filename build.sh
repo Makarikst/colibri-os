@@ -8,8 +8,14 @@ FLAGS="-m32 -ffreestanding -nostdlib -fno-pic -fno-stack-protector -fno-builtin 
 echo "=== Kernel entry ==="
 $GCC $FLAGS -c kernel_entry.S -o kernel_entry.o
 
+echo "=== Settings ==="
+$GCC $FLAGS -c kernel/settings/settings.c -o settings.o
+
 echo "=== GraphTool ==="
 $GCC $FLAGS -c kernel/graphtool/graphtool.c -o graphtool.o
+
+echo "=== I18N ==="
+$GCC $FLAGS -c kernel/i18n/i18n.c -o i18n.o
 
 echo "=== VGA ==="
 $GCC $FLAGS -c kernel/vga/vga.c -o vga.o
@@ -67,6 +73,7 @@ $GCC $FLAGS -c kernel/net/pci.c -o pci.o
 
 echo "=== Font ==="
 $GCC $FLAGS -c kernel/framebuffer/font8x16.c -o font8x16.o
+$GCC $FLAGS -c kernel/framebuffer/font8x16_cyr.c -o font8x16_cyr.o
 
 echo "=== NanoDesk ==="
 $GCC $FLAGS -c kernel/nano_desk/nano_desk.c -o nano_desk.o
@@ -113,15 +120,24 @@ $GCC $FLAGS -c kernel/browser/browser.c -o browser.o
 echo "=== CX ==="
 $GCC $FLAGS -c kernel/cx/cx.c -o cx.o
 
+echo "=== Studio ==="
+$GCC $FLAGS -c kernel/studio/studio.c -o studio.o
+
+echo "=== CAPP ==="
+$GCC $FLAGS -c kernel/capp/capp.c -o capp.o
+
+echo "=== Mission ==="
+$GCC $FLAGS -c kernel/mission/mission.c -o mission.o
+
 echo "=== Link ==="
 $LD -m elf_i386 -T linker.ld -o colibri.cos \
     --start-group \
     kernel_entry.o kernel.o vga.o kbd.o utils.o kmalloc.o framebuffer.o \
-    menupkm.o startmenu.o graphtool.o pci.o \
-    font8x16.o fs.o commands.o nano.o cpe.o shell.o desktop.o mouse.o wm.o \
+    menupkm.o startmenu.o settings.o graphtool.o pci.o \
+    font8x16.o font8x16_cyr.o fs.o commands.o nano.o cpe.o shell.o desktop.o mouse.o wm.o \
     term.o filer.o nano_desk.o \
     e1000.o net.o arp.o ip.o icmp.o tcp.o udp.o dns.o http.o \
-    html.o html_js.o browser.o cx.o \
+    html.o html_js.o browser.o cx.o i18n.o studio.o capp.o mission.o \
     --end-group
 
 echo "colibri.cos:"

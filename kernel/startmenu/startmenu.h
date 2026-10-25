@@ -9,12 +9,19 @@
 #define STARTMENU_WIDTH     200
 
 typedef struct {
+    int drag_start_x;
+    int drag_start_y;
     int  open;
     int  x, y;
     int  w, h;
     int  count;
     int  fs_indices[STARTMENU_MAX_ITEMS];
     int  hover;
+    // Для перетаскивания ярлыков
+    int  dragging;
+    int  drag_fs_index;
+    // Флаг, что меню только что открылось
+    int  just_opened;
 } StartMenu;
 
 void startmenu_init(StartMenu* m);

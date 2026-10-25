@@ -271,3 +271,12 @@ const unsigned char font8x16[256][16] = {
     {0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},
     {0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0},{0}
 };
+
+/* font8x16.c (after the tables) */
+const unsigned char* font_glyph(uint32_t cp) {
+    if (cp < 0x80)                    return font8x16[cp];
+    if (cp >= 0x410 && cp <= 0x44F)   return font_cyr[cp - 0x410];
+    if (cp == 0x401)                  return font_yo[0];
+    if (cp == 0x451)                  return font_yo[1];
+    return font8x16['?'];
+}

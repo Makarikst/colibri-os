@@ -19,27 +19,15 @@ int fs_find_in(int parent, const char* name) {
     return -1;
 }
 
-/* ============================================
-   Упаковка .capp с байт-кодом
-   ============================================ */
 static void pack_capp(int idx, const unsigned char* code, int code_size) {
     if (idx < 0) return;
     FsObject* o = fs_get(idx);
     if (!o) return;
-
-    o->data[0] = 'C';
-    o->data[1] = 'A';
-    o->data[2] = 'P';
-    o->data[3] = 'P';
-    o->data[4] = 2;
-    o->data[5] = 9;
-    o->data[6] = 0;
+    o->data[0] = 'C'; o->data[1] = 'A'; o->data[2] = 'P'; o->data[3] = 'P';
+    o->data[4] = 2; o->data[5] = 9; o->data[6] = 0;
     o->data[7] = (char)(code_size & 0xFF);
     o->data[8] = (char)((code_size >> 8) & 0xFF);
-
-    for (int i = 0; i < code_size; i++)
-        o->data[9 + i] = (char)code[i];
-
+    for (int i = 0; i < code_size; i++) o->data[9 + i] = (char)code[i];
     o->size = 9 + code_size;
 }
 
@@ -70,81 +58,57 @@ void fs_init(void) {
     int apps_idx = fs_find_in(a, "Applications");
     if (apps_idx < 0) apps_idx = fs_create_in(a, "Applications", OBJ_DIR);
 
-    if (fs_find_in(a, "Trash") < 0)
-        fs_create_in(a, "Trash", OBJ_DIR);
+    if (fs_find_in(a, "Trash") < 0) fs_create_in(a, "Trash", OBJ_DIR);
 
-    int term_app = -1, nano_app = -1, filer_app = -1;
-    if (apps_idx >= 0) {
-        term_app  = fs_find_in(apps_idx, "Terminal.capp");
-        if (term_app < 0) term_app = fs_create_in(apps_idx, "Terminal.capp", OBJ_APP_TERMINAL);
+    // Создаем все приложения в папке Applications
+    int term_app = fs_find_in(apps_idx, "Terminal.capp");
+    if (term_app < 0) term_app = fs_create_in(apps_idx, "Terminal.capp", OBJ_APP_TERMINAL);
 
-        nano_app  = fs_find_in(apps_idx, "Nano.capp");
-        if (nano_app < 0) nano_app = fs_create_in(apps_idx, "Nano.capp", OBJ_APP_NANO);
+    int nano_app = fs_find_in(apps_idx, "Nano.capp");
+    if (nano_app < 0) nano_app = fs_create_in(apps_idx, "Nano.capp", OBJ_APP_NANO);
 
-        filer_app = fs_find_in(apps_idx, "Filer.capp");
-        if (filer_app < 0) filer_app = fs_create_in(apps_idx, "Filer.capp", OBJ_APP_FILER);
-    }
-    int graph_app = -1;
-    if (apps_idx >= 0) {
-        graph_app = fs_find_in(apps_idx, "GraphTool.capp");
-        if (graph_app < 0)
-            graph_app = fs_create_in(apps_idx, "GraphTool.capp", OBJ_APP_GRAPHTOOL);
-    }
-    int browser_app = -1;
-    if (apps_idx >= 0) {
-        browser_app = fs_find_in(apps_idx, "Browser.capp");
-        if (browser_app < 0)
-            browser_app = fs_create_in(apps_idx, "Browser.capp", OBJ_APP_BROWSER);
-    }
+    int filer_app = fs_find_in(apps_idx, "Filer.capp");
+    if (filer_app < 0) filer_app = fs_create_in(apps_idx, "Filer.capp", OBJ_APP_FILER);
 
+    int graph_app = fs_find_in(apps_idx, "GraphTool.capp");
+    if (graph_app < 0) graph_app = fs_create_in(apps_idx, "GraphTool.capp", OBJ_APP_GRAPHTOOL);
+
+    int browser_app = fs_find_in(apps_idx, "Browser.capp");
+    if (browser_app < 0) browser_app = fs_create_in(apps_idx, "Browser.capp", OBJ_APP_BROWSER);
+
+    int settings_app_idx = fs_find_in(apps_idx, "Settings.capp");
+    if (settings_app_idx < 0) settings_app_idx = fs_create_in(apps_idx, "Settings.capp", OBJ_APP_SETTINGS);
+
+    int studio_app = fs_find_in(apps_idx, "Studio.capp");
+    if (studio_app < 0) studio_app = fs_create_in(apps_idx, "Studio.capp", OBJ_APP_STUDIO);
+
+    // Создаем ярлыки на рабочем столе для ВСЕХ приложений
     if (desktop_idx >= 0) {
-        if (fs_find_in(desktop_idx, "Terminal.yrl") < 0) {
-            int l = fs_create_in(desktop_idx, "Terminal.yrl", OBJ_LINK);
-            if (l >= 0) fs_objects[l].target_id = term_app;
-        }
-        if (fs_find_in(desktop_idx, "Nano.yrl") < 0) {
-            int l = fs_create_in(desktop_idx, "Nano.yrl", OBJ_LINK);
-            if (l >= 0) fs_objects[l].target_id = nano_app;
-        }
-        if (fs_find_in(desktop_idx, "Filer.yrl") < 0) {
-            int l = fs_create_in(desktop_idx, "Filer.yrl", OBJ_LINK);
-            if (l >= 0) fs_objects[l].target_id = filer_app;
-        }
-        if (fs_find_in(desktop_idx, "GraphTool.yrl") < 0) {
-            int l = fs_create_in(desktop_idx, "GraphTool.yrl", OBJ_LINK);
-            if (l >= 0) fs_objects[l].target_id = graph_app;
-        }
-        if (fs_find_in(desktop_idx, "Trash.yrl") < 0) {
-            int trash_idx = fs_find_in(a, "Trash");
-            int l = fs_create_in(desktop_idx, "Trash.yrl", OBJ_LINK);
-            if (l >= 0) fs_objects[l].target_id = trash_idx;
-        }
-        if (fs_find_in(desktop_idx, "Browser.yrl") < 0) {
-            int l = fs_create_in(desktop_idx, "Browser.yrl", OBJ_LINK);
-            if (l >= 0) fs_objects[l].target_id = browser_app;
-        }
-
+        if (fs_find_in(desktop_idx, "Terminal.yrl") < 0) { int l = fs_create_in(desktop_idx, "Terminal.yrl", OBJ_LINK); if (l >= 0) fs_objects[l].target_id = term_app; }
+        if (fs_find_in(desktop_idx, "Nano.yrl") < 0) { int l = fs_create_in(desktop_idx, "Nano.yrl", OBJ_LINK); if (l >= 0) fs_objects[l].target_id = nano_app; }
+        if (fs_find_in(desktop_idx, "Filer.yrl") < 0) { int l = fs_create_in(desktop_idx, "Filer.yrl", OBJ_LINK); if (l >= 0) fs_objects[l].target_id = filer_app; }
+        if (fs_find_in(desktop_idx, "GraphTool.yrl") < 0) { int l = fs_create_in(desktop_idx, "GraphTool.yrl", OBJ_LINK); if (l >= 0) fs_objects[l].target_id = graph_app; }
+        if (fs_find_in(desktop_idx, "Browser.yrl") < 0) { int l = fs_create_in(desktop_idx, "Browser.yrl", OBJ_LINK); if (l >= 0) fs_objects[l].target_id = browser_app; }
+        if (fs_find_in(desktop_idx, "Settings.yrl") < 0) { int l = fs_create_in(desktop_idx, "Settings.yrl", OBJ_LINK); if (l >= 0) fs_objects[l].target_id = settings_app_idx; }
+        if (fs_find_in(desktop_idx, "Studio.yrl") < 0) { int l = fs_create_in(desktop_idx, "Studio.yrl", OBJ_LINK); if (l >= 0) fs_objects[l].target_id = studio_app; }
     }
 
-    /* Байт-код для приложений */
+    // Пакуем код приложений (заглушки)
     static const unsigned char code_terminal[] = { 0x10, 0xFF };
-    static const unsigned char code_nano[]     = { 0x11, 0xFF };
-    static const unsigned char code_filer[]    = { 0x12, 0xFF };
-    static const unsigned char code_graph[] = { 0x13, 0xFF };
-    static const unsigned char code_browser[] = { 0x14, 0xFF };
+    static const unsigned char code_studio[] = { 0x17, 0xFF };
+    pack_capp(term_app, code_terminal, sizeof(code_terminal));
+    pack_capp(studio_app, code_studio, sizeof(code_studio));
 
-    pack_capp(term_app,  code_terminal, sizeof(code_terminal));
-    pack_capp(nano_app,  code_nano,     sizeof(code_nano));
-    pack_capp(filer_app, code_filer,    sizeof(code_filer));
-    pack_capp(graph_app, code_graph, sizeof(code_graph));
-    pack_capp(browser_app, code_browser, sizeof(code_browser));
-
-    /* Содержимое .yrl — ID цели */
+    // Записываем ID приложений в данные ярлыков
     for (int i = 0; i < FS_MAX_OBJECTS; i++) {
         if (fs_objects[i].type == OBJ_LINK) {
             char buf[16];
             itoa(fs_objects[i].target_id, buf, 10);
-            int n = 0; while (buf[n] && n < FS_DATA_LEN - 1) { fs_objects[i].data[n] = buf[n]; n++; }
+            int n = 0;
+            while (buf[n] && n < FS_DATA_LEN - 1) {
+                fs_objects[i].data[n] = buf[n];
+                n++;
+            }
             fs_objects[i].data[n] = 0;
             fs_objects[i].size = n;
         }
@@ -163,9 +127,10 @@ int fs_create_in(int parent_idx, const char* name, int type) {
             fs_objects[i].target_id = -1;
             fs_objects[i].saved_type = -1;
 
-            /* Если это приложение — запоминаем исходный тип */
             if (type == OBJ_APP_TERMINAL || type == OBJ_APP_NANO ||
-                type == OBJ_APP_FILER    || type == OBJ_APP_TRASH) {
+                type == OBJ_APP_FILER    || type == OBJ_APP_TRASH ||
+                type == OBJ_APP_SETTINGS || type == OBJ_APP_GRAPHTOOL ||
+                type == OBJ_APP_BROWSER  || type == OBJ_APP_STUDIO) {
                 fs_objects[i].saved_type = type;
             }
             return i;
@@ -245,8 +210,14 @@ int split_path(const char* path, int start_idx, int* parent_idx, char* last) {
             if (pi > 0) {
                 if (last_name[0] != 0) {
                     if (strcmp(last_name, ".") == 0) { }
-                    else if (strcmp(last_name, "..") == 0) { if (last_parent != ROOT_INDEX) last_parent = fs_objects[last_parent].parent; }
-                    else { int idx = fs_find_in(last_parent, last_name); if (idx == -1) return 0; last_parent = idx; }
+                    else if (strcmp(last_name, "..") == 0) {
+                        if (last_parent != ROOT_INDEX) last_parent = fs_objects[last_parent].parent;
+                    }
+                    else {
+                        int idx = fs_find_in(last_parent, last_name);
+                        if (idx == -1) return 0;
+                        last_parent = idx;
+                    }
                 }
                 strcpy(last_name, part);
             }

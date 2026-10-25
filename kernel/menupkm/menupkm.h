@@ -28,6 +28,7 @@
 #define MENU_ACTION_OPEN        3
 #define MENU_ACTION_DELETE      4
 #define MENU_ACTION_CANCEL      5
+#define MENU_ACTION_CREATE_LINK   6   // <--- ДОБАВИТЬ ВОТ ЭТУ СТРОКУ
 
 typedef struct {
     int  open;

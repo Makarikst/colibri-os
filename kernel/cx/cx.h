@@ -3,64 +3,62 @@
 
 #include "../utils/utils.h"
 
-/* Типы токенов */
+// Типы токенов
 enum {
-    TOK_EOF = 0,
-    TOK_INT_LIT,      /* 123 */
-    TOK_STR_LIT,      /* "hello" */
-    TOK_IDENT,        /* foo, bar */
-    TOK_KEYWORD,      /* int, if, while, return, void, const, type, mass */
-    TOK_OP,           /* + - * / = == != < > <= >= && || ! */
-    TOK_PUNCT         /* ( ) { } [ ] , ; */
+    TOK_EOF = 0, TOK_INT_LIT, TOK_STR_LIT, TOK_IDENT,
+    TOK_KEYWORD, TOK_OP, TOK_PUNCT
 };
 
-/* Ключевые слова */
+// Ключевые слова (добавлены интерфейсные)
 enum {
-    KW_NONE = 0,
-    KW_INT, KW_NUM, KW_DOUBLE, KW_FLOAT, KW_STR, KW_VOID,
-    KW_IF, KW_ELSE, KW_WHILE, KW_RETURN,
-    KW_CONST, KW_TYPE, KW_MASS, KW_TRUE, KW_FALSE
+    KW_NONE = 0, KW_INT, KW_STR, KW_PRINT,
+    KW_LABEL, KW_TEXTVIEW
 };
 
-/* Операторы */
-enum {
-    OP_NONE = 0,
-    OP_PLUS, OP_MINUS, OP_STAR, OP_SLASH,
-    OP_ASSIGN, OP_EQ, OP_NEQ,
-    OP_LT, OP_GT, OP_LE, OP_GE,
-    OP_AND, OP_OR, OP_NOT
-};
+// Операторы
+enum { OP_NONE = 0, OP_PLUS, OP_MINUS, OP_STAR, OP_SLASH, OP_ASSIGN, OP_EQ, OP_LT, OP_GT };
 
-/* Пунктуация */
-enum {
-    P_NONE = 0,
-    P_LPAREN, P_RPAREN,
-    P_LBRACE, P_RBRACE,
-    P_LBRACKET, P_RBRACKET,
-    P_COMMA, P_SEMI
-};
+// Пунктуация
+enum { P_NONE = 0, P_LPAREN, P_RPAREN, P_LBRACE, P_RBRACE, P_SEMI };
 
 typedef struct {
-    int      type;       /* TOK_* */
-    int      kw;         /* KW_* если KEYWORD */
-    int      op;         /* OP_* если OP */
-    int      p;          /* P_* если PUNCT */
-    long     int_val;    /* если INT_LIT */
-    char     str_val[256]; /* если STR_LIT или IDENT */
-    int      line;       /* строка в исходнике */
+    int type;
+    int kw;
+    int op;
+    int p;
+    long int_val;
+    char str_val[256];
 } Token;
 
-/* Лексер */
 typedef struct {
     const char* src;
-    int         pos;
-    int         line;
+    int pos;
+    int line;
 } Lexer;
+
+// ---- Модель приложения (разбор MANIFEST + screen) ----
+#define CX_MAX_WIDGETS 24
+#define CX_TEXT_LEN    96
+
+typedef struct {
+    int  x, y;
+    char text[CX_TEXT_LEN];
+} CxWidget;
+
+typedef struct {
+    char     label[32];
+    char     icon[128];
+    int      has_screen;
+    int      widget_count;
+    CxWidget widgets[CX_MAX_WIDGETS];
+} CxApp;
+
+// Разбирает исходник приложения. Возвращает 1, если найден screen.
+int   cx_app_load(CxApp* app, const char* source);
 
 void  cx_lexer_init(Lexer* lex, const char* src);
 Token cx_lexer_next(Lexer* lex);
-
-/* Отладка */
-const char* cx_token_name(Token* t);
+void  cx_run_code(const char* source);
+void  cx_run_code_buf(const char* source, char* out_buf, int max_len);
 
 #endif

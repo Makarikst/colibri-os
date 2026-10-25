@@ -1,10 +1,6 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-/* ============================================
-   Утилиты Colibri OS
-   ============================================ */
-
 typedef unsigned char      uint8_t;
 typedef unsigned short     uint16_t;
 typedef unsigned int       uint32_t;
@@ -16,6 +12,7 @@ typedef signed long long   int64_t;
 
 /* ---------- Память ---------- */
 void  memcpy(void* dst, const void* src, uint32_t n);
+uint32_t utf8_next(const char** sp);
 void  memset(void* dst, uint8_t val, uint32_t n);
 int   memcmp(const void* a, const void* b, uint32_t n);
 void  memmove(void* dst, const void* src, uint32_t n);
@@ -58,7 +55,9 @@ typedef struct {
 } rtc_time_t;
 
 rtc_time_t rtc_get_time(void);
+void       rtc_set_time(rtc_time_t t);
 uint32_t   rtc_get_unix(void);
+uint8_t    rtc_read(uint8_t reg); // <--- СДЕЛАЛИ ПУБЛИЧНОЙ
 
 /* ---------- Порты ---------- */
 void     outb(uint16_t port, uint8_t val);
@@ -82,7 +81,5 @@ int      rand_range(int lo, int hi);
 void cpu_halt(void);
 void cpu_cli(void);
 void cpu_sti(void);
-
-
 
 #endif

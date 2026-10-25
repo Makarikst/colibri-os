@@ -3,7 +3,7 @@
 
 #include "../utils/utils.h"
 
-#define FS_MAX_OBJECTS 32
+#define FS_MAX_OBJECTS 64
 #define FS_NAME_LEN    32
 #define FS_DATA_LEN    4096
 
@@ -14,8 +14,10 @@
 #define OBJ_APP_TRASH    11
 #define OBJ_APP_NANO     12
 #define OBJ_APP_FILER    13
-#define OBJ_APP_GRAPHTOOL 14    /* ← НОВОЕ */
-#define OBJ_APP_BROWSER  15    /* ← добавь */
+#define OBJ_APP_GRAPHTOOL 14
+#define OBJ_APP_BROWSER  15
+#define OBJ_APP_SETTINGS 16
+#define OBJ_APP_STUDIO   17  // <--- НОВЫЙ ТИП
 #define OBJ_LINK         20
 #define ROOT_INDEX       0
 
@@ -26,7 +28,7 @@ typedef struct {
     int  parent;
     int  size;
     int  target_id;
-    int  saved_type;      /* ← НОВОЕ: исходный тип приложения */
+    int  saved_type;
 } FsObject;
 
 void fs_init(void);

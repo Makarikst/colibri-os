@@ -47,14 +47,12 @@ void fb_line     (uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t c
 
 /* Обычный вывод в VGA-совместимый framebuffer */
 /* Обычный вывод в VGA-совместимый framebuffer */
-void fb_putchar(char c, uint32_t x, uint32_t y, uint32_t fg, uint32_t bg);
+void fb_putchar(uint32_t cp, uint32_t x, uint32_t y, uint32_t fg, uint32_t bg);
 void fb_print(const char* str, uint32_t x, uint32_t y, uint32_t fg, uint32_t bg);
 void fb_print_dec(int n, uint32_t x, uint32_t y, uint32_t fg, uint32_t bg);
 
 /* Вывод прямо в буфер (для double buffering) */
-void fb_putchar_to_buffer(uint32_t* buf, int bw, int bh,
-                          char c, int x, int y,
-                          uint32_t fg, uint32_t bg);
+void fb_putchar_to_buffer(uint32_t* buf, int bw, int bh, uint32_t cp, int x, int y, uint32_t fg, uint32_t bg);
 void fb_print_to_buffer(uint32_t* buf, int bw, int bh,
                         const char* str, int x, int y,
                         uint32_t fg, uint32_t bg);

@@ -15,7 +15,11 @@
 #define PANEL_BUTTON_W       64
 #define PANEL_BUTTON_H       48
 
-#define DESKTOP_BG           0x2A4A7A
+// Было:
+// #define DESKTOP_BG           0x2A4A7A
+// Стало:
+extern uint32_t g_desktop_bg;
+#define DESKTOP_BG g_desktop_bg
 #define DESKTOP_PANEL_BG     0x1A2A3A
 #define DESKTOP_ICON_TEXT_CLR 0xFFFFFF
 
@@ -34,6 +38,8 @@ typedef struct {
 
 extern DesktopIcon desktop_icons[DESKTOP_MAX_ICONS];
 extern int         desktop_icons_count;
+int find_icon_in_manifest(int fs_idx);
+void draw_png_from_file(uint32_t* buf, int bw, int bh, int fs_idx, int x, int y);
 
 #define ICON_TERMINAL_X   16
 #define ICON_TERMINAL_Y   16

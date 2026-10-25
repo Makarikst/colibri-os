@@ -122,11 +122,11 @@ void fb_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t color)
 /* ============================================
    Текст в VGA-framebuffer
    ============================================ */
-void fb_putchar(char c, uint32_t x, uint32_t y, uint32_t fg, uint32_t bg) {
+void fb_putchar(uint32_t cp, uint32_t x, uint32_t y, uint32_t fg, uint32_t bg) {
     if (!fb_enabled) return;
-    unsigned char ch = (unsigned char)c;
+    const unsigned char* g = font_glyph(cp);
     for (int row = 0; row < 16; row++) {
-        unsigned char bits = font8x16[ch][row];
+        unsigned char bits = g[row];
         for (int col = 0; col < 8; col++) {
             uint32_t color = (bits & (0x80 >> col)) ? fg : bg;
             fb_putpixel(x + col, y + row, color);
@@ -152,13 +152,11 @@ void fb_print_dec(int n, uint32_t x, uint32_t y, uint32_t fg, uint32_t bg) {
 /* ============================================
    Текст прямо в буфер (double buffering)
    ============================================ */
-void fb_putchar_to_buffer(uint32_t* buf, int bw, int bh,
-                          char c, int x, int y,
-                          uint32_t fg, uint32_t bg)
-{
-    unsigned char ch = (unsigned char)c;
+void fb_putchar_to_buffer(uint32_t* buf, int bw, int bh, uint32_t cp,
+                          int x, int y, uint32_t fg, uint32_t bg) {
+    const unsigned char* g = font_glyph(cp);
     for (int row = 0; row < 16; row++) {
-        unsigned char bits = font8x16[ch][row];
+        unsigned char bits = g[row];
         for (int col = 0; col < 8; col++) {
             uint32_t color = (bits & (0x80 >> col)) ? fg : bg;
             int px = x + col;
@@ -175,13 +173,9 @@ void fb_print_to_buffer(uint32_t* buf, int bw, int bh,
                         uint32_t fg, uint32_t bg)
 {
     int cx = x;
-    int cy = y;
     while (*str) {
-        if (*str == '\n') { cx = x; cy += 16; }
-        else {
-            fb_putchar_to_buffer(buf, bw, bh, *str, cx, cy, fg, bg);
-            cx += 8;
-        }
-        str++;
+        if (*str == '\n') { cx = x; y += 16; str++; continue; }
+        fb_putchar_to_buffer(buf, bw, bh, utf8_next(&str), cx, y, fg, bg);
+        cx += 8;
     }
 }
