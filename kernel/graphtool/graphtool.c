@@ -202,11 +202,11 @@ int graphtool_load_from_file(int fs_index) {
 }
 
 void graphtool_save(void) {
-    if (graphtool.file_fs_index < 0) {
-        int desktop = desktop_get_folder_index();
-        if (desktop < 0) { graphtool.save_status = -2; return; }
+    int desktop = desktop_get_folder_index();
+    if (desktop < 0) { graphtool.save_status = -2; return; }
 
-        /* Ищем свободное имя: untitled.png, untitled_1.png, untitled_2.png ... */
+    /* Если это НОВЫЙ файл, или если мы не смогли найти старый, ищем свободное имя */
+    if (graphtool.file_fs_index < 0) {
         char name[FS_NAME_LEN];
         int new_idx = -1;
         for (int n = 0; n < 1000 && new_idx < 0; n++) {
@@ -228,7 +228,7 @@ void graphtool_save(void) {
                 new_idx = fs_create_in(desktop, name, OBJ_FILE);
             }
         }
-        if (new_idx < 0) { graphtool.save_status = -1; return; } // нет места в ФС
+        if (new_idx < 0) { graphtool.save_status = -1; return; } // нет места
         graphtool.file_fs_index = new_idx;
     }
 

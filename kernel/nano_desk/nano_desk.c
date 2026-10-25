@@ -115,39 +115,55 @@ void nano_desk_close(void) {
    ============================================ */
 static void nano_save(void) {
     if (nano.file_fs_index < 0) {
-        /* Создаём новый файл в ~/Desktop */
-        int users = -1, alpha = -1;
-        for (int i = 0; i < FS_MAX_OBJECTS; i++) {
-            FsObject* o = fs_get(i);
-            if (!o || o->type != OBJ_DIR) continue;
-            if (o->parent == ROOT_INDEX && strcmp(o->name, "colibri") == 0) {
-                /* пропускаем */
-            }
-        }
-        /* Ищем alpha по цепочке */
+        /* Ищем папку alpha по цепочке colibri/users/alpha */
         int colibri = -1;
         for (int i = 0; i < FS_MAX_OBJECTS; i++) {
             FsObject* o = fs_get(i);
             if (!o || o->type != OBJ_DIR) continue;
             if (o->parent == ROOT_INDEX && strcmp(o->name, "colibri") == 0) colibri = i;
         }
+
+        int users = -1;
         for (int i = 0; i < FS_MAX_OBJECTS && colibri >= 0; i++) {
             FsObject* o = fs_get(i);
             if (!o || o->type != OBJ_DIR) continue;
             if (o->parent == colibri && strcmp(o->name, "users") == 0) users = i;
         }
+
+        int alpha = -1;
         for (int i = 0; i < FS_MAX_OBJECTS && users >= 0; i++) {
             FsObject* o = fs_get(i);
             if (!o || o->type != OBJ_DIR) continue;
             if (o->parent == users && strcmp(o->name, "alpha") == 0) alpha = i;
         }
+
         if (alpha >= 0) {
-            int idx = fs_find_in(alpha, "untitled.txt");
-            if (idx < 0) idx = fs_create_in(alpha, "untitled.txt", OBJ_FILE);
+            char name[FS_NAME_LEN];
+            int idx = -1;
+            for (int n = 0; n < 1000 && idx < 0; n++) {
+                if (n == 0) {
+                    strcpy(name, "new_file.txt");
+                } else {
+                    char num[8]; int k = 0, v = n, tmp[8];
+                    while (v > 0) { tmp[k++] = (char)('0' + v % 10); v /= 10; }
+                    for (int i = 0; i < k; i++) num[i] = tmp[k - 1 - i];
+                    num[k] = 0;
+
+                    int p = 0;
+                    const char* base = "new_file_";
+                    while (*base) name[p++] = *base++;
+                    for (int i = 0; i < k; i++) name[p++] = num[i];
+                    name[p++] = '.'; name[p++] = 't'; name[p++] = 'x'; name[p++] = 't'; name[p] = 0;
+                }
+                if (fs_find_in(alpha, name) < 0) {
+                    idx = fs_create_in(alpha, name, OBJ_FILE);
+                }
+            }
             nano.file_fs_index = idx;
         }
     }
 
+    /* Сохранение в файл */
     if (nano.file_fs_index >= 0) {
         FsObject* o = fs_get(nano.file_fs_index);
         if (o) {
@@ -156,7 +172,7 @@ static void nano_save(void) {
             for (int i = 0; i < sz; i++) o->data[i] = nano.buf[i];
             o->data[sz] = 0;
             o->size = sz;
-            /* статус */
+
             const char* msg = "[Saved]";
             int i = 0;
             while (msg[i] && i < 63) { nano.status[i] = msg[i]; i++; }
